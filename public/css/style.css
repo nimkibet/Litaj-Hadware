@@ -306,3 +306,16 @@ input, button, select, textarea {
         margin-bottom: 1rem;
     }
 }
+
+/* Universal Phone Navigation Bar Clearance (Samsung A03 & All Mobile Devices) */
+@media (max-width: 1023px) {
+    /* All content pages get generous bottom breathing room above the phone's system navigation buttons */
+    body:not(.no-bottom-pad) {
+        padding-bottom: max(env(safe-area-inset-bottom, 0px), 32px) !important;
+    }
+    
+    /* Ensure modal sheets and actions stay well above the phone navigation bar */
+    .fixed.inset-0 > div {
+        margin-bottom: max(env(safe-area-inset-bottom, 0px), 24px) !important;
+    }
+}

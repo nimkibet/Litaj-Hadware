@@ -30,7 +30,7 @@
         /* Dynamic Viewport Height & Safe Area Fix for Samsung A03 and all mobile devices */
         :root {
             --app-height: 100vh;
-            --safe-bottom: max(env(safe-area-inset-bottom, 0px), 8px);
+            --phone-nav-clearance: max(env(safe-area-inset-bottom, 0px), 24px);
         }
         @supports (height: 100dvh) {
             :root {
@@ -45,22 +45,22 @@
             max-height: var(--app-height, 100dvh);
         }
 
-        /* Fixed Mobile Navigation on Android & Small Viewports */
+        /* Fixed Mobile Navigation Raised Well Above Phone Navigation Bar */
         #mobile-bottom-nav {
             position: fixed;
             bottom: 0;
             left: 0;
             right: 0;
             z-index: 50;
-            height: calc(58px + var(--safe-bottom, 8px));
-            padding-bottom: var(--safe-bottom, 8px);
+            height: calc(56px + var(--phone-nav-clearance));
+            padding-bottom: var(--phone-nav-clearance);
             background-color: #0f172a; /* slate-900 */
             border-top: 1px solid #334155;
-            box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.45);
+            box-shadow: 0 -6px 25px rgba(0, 0, 0, 0.5);
         }
         #mobile-floating-cart-bar {
             position: fixed;
-            bottom: calc(66px + var(--safe-bottom, 8px));
+            bottom: calc(66px + var(--phone-nav-clearance));
             left: 0.75rem;
             right: 0.75rem;
             z-index: 45;
@@ -80,14 +80,14 @@
             input, select, textarea, button { font-size: 15px; }
         }
         /* Mobile safe-area support */
-        .pb-safe { padding-bottom: max(env(safe-area-inset-bottom, 0px), 10px); }
+        .pb-safe { padding-bottom: max(env(safe-area-inset-bottom, 0px), 16px); }
         .pt-safe { padding-top: max(env(safe-area-inset-top, 0px), 8px); }
         .product-card:active { transform: scale(0.98); background-color: #fff7ed; }
         ::-webkit-scrollbar { width: 5px; height: 5px; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
     </style>
 </head>
-<body class="bg-slate-100 flex flex-col font-sans text-slate-800 overflow-hidden select-none" style="height: 100vh; height: var(--app-height, 100dvh); max-height: var(--app-height, 100dvh);">
+<body class="bg-slate-100 flex flex-col font-sans text-slate-800 overflow-hidden select-none no-bottom-pad" style="height: 100vh; height: var(--app-height, 100dvh); max-height: var(--app-height, 100dvh);">
 
     <!-- ========================================================= -->
     <!-- TOP HEADER BAR (Mobile-Optimized)                          -->
@@ -145,7 +145,7 @@
     <!-- MAIN APPLICATION WORKSPACE                                -->
     <!-- Mobile: Tabbed Panels | Desktop: Side-by-Side 2 Columns    -->
     <!-- ========================================================= -->
-    <main class="flex-1 min-h-0 overflow-hidden relative flex flex-col lg:flex-row p-2 sm:p-3 gap-2 sm:gap-3 pb-[74px] lg:pb-3">
+    <main class="flex-1 min-h-0 overflow-hidden relative flex flex-col lg:flex-row p-2 sm:p-3 gap-2 sm:gap-3 pb-[104px] lg:pb-3">
 
         <!-- ===================================================== -->
         <!-- PANEL 1: PRODUCTS / CATALOG / LIVE SEARCH             -->
