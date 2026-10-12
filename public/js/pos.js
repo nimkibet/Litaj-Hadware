@@ -1,1808 +1,1078 @@
 import { supabase, currentUser, requireAuth } from './supabaseClient.js';
-import { insertSaleWithOfflineSupport, syncOfflineSales, insertExpenseWithOfflineSupport, syncOfflineExpenses } from './offlineQueue.js';
+import { insertSaleWithOfflineSupport, syncOfflineSales } from './offlineQueue.js';
+
 requireAuth();
-let inventory = [], customers = [], todaysSales = [];
 
-window.setQuickPayUI = function(method) {
-    quickPay = method;
-    const btnM = document.getElementById('quick-pay-mpesa');
-    const btnC = document.getElementById('quick-pay-cash');
-    if (quickPay === 'M-Pesa') {
-        btnM.className = 'flex-1 bg-orange-700 text-white py-2 rounded font-medium shadow transition';
-        btnC.className = 'flex-1 bg-gray-200 text-gray-700 py-2 rounded font-medium transition';
-    } else {
-        btnC.className = 'flex-1 bg-orange-600 text-white py-2 rounded font-medium shadow transition';
-        btnM.className = 'flex-1 bg-gray-200 text-gray-700 py-2 rounded font-medium transition';
-    }
-};
+// ====================================================================
+// STATE
+// ====================================================================
+let inventory = [];
+let customers = [];
+let cart = [];
+let todaysSales = [];
+let activeCategory = 'ALL';
+let activePaymentMethod = 'Cash';
 
-let activeQuick = "Print / Copy", quickPay = "M-Pesa", mainPay = "M-Pesa";
+// Navigation User Display
+if (currentUser) {
+    const nameEl = document.getElementById('nav-user-name');
+    const roleEl = document.getElementById('nav-user-role');
+    if (nameEl) nameEl.textContent = currentUser.full_name || currentUser.username;
+    if (roleEl) roleEl.textContent = currentUser.role || 'Staff';
+}
 
+// Mobile menu toggle
+document.getElementById('mobile-menu-btn')?.addEventListener('click', () => {
+    document.getElementById('mobile-menu')?.classList.toggle('hidden');
+});
+document.getElementById('btn-logout-mobile')?.addEventListener('click', () => {
+    document.getElementById('btn-logout')?.click();
+});
 
-let activeBindingGroup = null;
-let bindingGroups = [];
-let linkedBindingResources = [];
-let showTapeButton = false;
-let activeBindingItem = null;
-
-async function loadBindingSettings() {
+// ====================================================================
+// 1. INVENTORY LOADING & LIVE CATALOG
+// ====================================================================
+async function loadInventory() {
     try {
-        if (!navigator.onLine) throw new Error('Offline');
-        const { data: rows } = await supabase.from('settings').select('key, value')
-            .in('key', ['binding_groups', 'binding_linked_resources', 'binding_show_tape', 'quick_add_order']);
-        if (rows) localStorage.setItem('litaj_settings_cache', JSON.stringify(rows));
-        applySettingsRows(rows || []);
-    } catch (e) {
-        const cached = localStorage.getItem('litaj_settings_cache');
-        applySettingsRows(cached ? JSON.parse(cached) : []);
-    }
-}
+        const productCountLabel = document.getElementById('product-count-label');
+        if (productCountLabel) productCountLabel.textContent = 'Loading...';
 
-let quickAddOrder = [];
-function applySettingsRows(rows) {
-    const map = {};
-    rows.forEach(r => map[r.key] = r.value);
-    bindingGroups = map['binding_groups'] ? JSON.parse(map['binding_groups']) : [];
-    showTapeButton = map['binding_show_tape'] === 'true';
-    if (map['binding_linked_resources']) {
-        linkedBindingResources = JSON.parse(map['binding_linked_resources']);
-    } else {
-        linkedBindingResources = inventory
-            .filter(i => i.name === 'EMBOSSED' || i.name === 'PVC (BLUE)')
-            .map(i => ({ id: i.id, name: i.name }));
-    }
-    quickAddOrder = map['quick_add_order'] ? JSON.parse(map['quick_add_order']) : [];
-}
-
-function renderBindingOptions() {
-    const container = document.getElementById('binding-options-container');
-    if (!container) return;
-
-    if (bindingGroups.length === 0) {
-        // Fallback: show all spirals individually
-        const spirals = inventory.filter(i => { const n = i.name.toLowerCase(); return n.includes('spiral') && !n.includes('a5 spiral'); });
-        if (!activeBindingItem && spirals.length > 0) activeBindingItem = spirals[0];
-        container.innerHTML = spirals.map(m => `<button onclick="window.selectBindingItem('${m.id}')" class="px-2 py-1 rounded text-xs font-bold ${activeBindingItem && activeBindingItem.id === m.id ? 'bg-slate-700 text-white shadow' : 'bg-white text-slate-600 border border-slate-200'}">${m.name} (${m.selling_price})</button>`).join('');
-        return;
-    }
-
-    if (!activeBindingGroup) activeBindingGroup = bindingGroups[0];
-    let html = bindingGroups.map(g => `<button onclick="window.setBindingGroup('${g.id}')" class="px-3 py-1.5 rounded text-xs font-bold transition-all ${activeBindingGroup && activeBindingGroup.id === g.id ? 'bg-slate-700 text-white shadow' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}">${g.name}</button>`).join('');
-
-    if (showTapeButton) {
-        html += `<button onclick="window.setBindingGroup('__tape__')" class="px-3 py-1.5 rounded text-xs font-bold ${activeBindingGroup && activeBindingGroup.id === '__tape__' ? 'bg-slate-600 text-white shadow' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}">🏷️ Tape</button>`;
-    }
-
-    if (activeBindingGroup && activeBindingGroup.id !== '__tape__' && activeBindingGroup.items && activeBindingGroup.items.length > 0) {
-        html += `<div class="w-full flex flex-wrap gap-1.5 mt-2 pt-2 border-t border-slate-200">`;
-        html += activeBindingGroup.items.map(item => {
-            const inv_item = inventory.find(i => i.id === item.id);
-            const price = inv_item ? inv_item.selling_price : item.selling_price;
-            return `<button onclick="window.selectBindingItem('${item.id}')" class="px-2 py-1 rounded text-xs font-semibold ${activeBindingItem && activeBindingItem.id === item.id ? 'bg-slate-700 text-white' : 'bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100'}" data-binding-item="${item.id}">${item.name} (${price})</button>`;
-        }).join('');
-        html += `</div>`;
-    }
-
-    container.innerHTML = html;
-}
-
-window.setBindingGroup = function(id) {
-    if (id === '__tape__') {
-        activeBindingGroup = { id: '__tape__', name: 'Tape', items: [], noStock: true };
-        activeBindingItem = null;
-        document.getElementById('quick-amount').value = '';
-    } else {
-        activeBindingGroup = bindingGroups.find(g => g.id === id) || null;
-        activeBindingItem = activeBindingGroup && activeBindingGroup.items[0]
-            ? inventory.find(i => i.id === activeBindingGroup.items[0].id) : null;
-        // Auto-fill amount from group name price (e.g. "KSH 50" → 50)
-        if (activeBindingGroup) {
-            const price = parseFloat((activeBindingGroup.name || '').replace(/[^0-9.]/g, ''));
-            if (price) document.getElementById('quick-amount').value = price;
+        if (navigator.onLine) {
+            const { data, error } = await supabase.from('inventory').select('*').order('name');
+            if (error) throw error;
+            inventory = data || [];
+            localStorage.setItem('litaj_inventory_cache', JSON.stringify(inventory));
+        } else {
+            inventory = JSON.parse(localStorage.getItem('litaj_inventory_cache') || '[]');
         }
-    }
-    renderBindingOptions();
-};
 
-window.selectBindingItem = function(itemId) {
-    activeBindingItem = inventory.find(i => i.id === itemId);
-    if (activeBindingItem) {
-        document.getElementById('quick-amount').value = activeBindingItem.selling_price;
-    }
-    renderBindingOptions();
-};
-
-async function deductBindingMaterials(qty) {
-    for (const res of linkedBindingResources) {
-        const item = inventory.find(i => i.id === res.id);
-        if (item) {
-            const newStock = (item.stock_quantity || 0) - qty;
-            try {
-                // if (navigator.onLine) await supabase.from('inventory').update({ stock_quantity: newStock }).eq('id', item.id); /* Handled by Postgres Trigger */
-            } catch(e) {}
-            item.stock_quantity = newStock;
-        }
-    }
-}
-
-async function loadData() {
-    try {
-        if (!navigator.onLine) throw new Error('Offline');
-        const [{data:inv}, {data:cust}] = await Promise.all([
-            supabase.from('inventory').select('*').order('name'),
-            supabase.from('customers').select('*').order('name')
-        ]);
-        inventory = inv || [];
-        customers = cust || [];
-        localStorage.setItem('litaj_inventory_cache', JSON.stringify(inventory));
-        localStorage.setItem('litaj_customers_cache', JSON.stringify(customers));
-    } catch (e) {
+        renderCatalog();
+    } catch (err) {
+        console.warn('Failed to load inventory online, using cache:', err.message);
         inventory = JSON.parse(localStorage.getItem('litaj_inventory_cache') || '[]');
-        customers = JSON.parse(localStorage.getItem('litaj_customers_cache') || '[]');
-        console.warn('Offline mode: Loaded inventory/customers from cache', inventory.length);
+        renderCatalog();
     }
-
-    await loadBindingSettings();
-    renderBindingOptions();
-
-    // ── Feature 1: Populate customer dropdown (pos-customer) ──────────────
-    populateCustomerDropdown();
-
-    // ── Feature 2: Populate debt panel dropdown (customers with balance > 0) ──
-    populateDebtDropdown();
-    populateDebtSaleDropdown();
-
-    // ── Feature 3: Render dynamic Quick Add buttons ───────────────────────
-    renderQuickAddButtons();
-
-    // Subscribe to real-time inventory updates
-    supabase.channel('public:inventory').on('postgres_changes', { event: '*', schema: 'public', table: 'inventory' }, payload => {
-        if (payload.eventType === 'INSERT') {
-            inventory.push(payload.new);
-            inventory.sort((a,b) => a.name.localeCompare(b.name));
-        } else if (payload.eventType === 'UPDATE') {
-            const idx = inventory.findIndex(i => i.id === payload.new.id);
-            if (idx >= 0) inventory[idx] = payload.new;
-        } else if (payload.eventType === 'DELETE') {
-            inventory = inventory.filter(i => i.id !== payload.old.id);
-        }
-        renderQuickAddButtons(); // keep buttons in sync on live updates
-    }).subscribe();
-
-    await fetchTodaysSales();
 }
 
-// ── Feature 1 helper: (re)populate #pos-customer, keeping current selection ──
-function populateCustomerDropdown() {
-    const sel = document.getElementById('pos-customer');
-    const currentVal = sel.value;
-    sel.innerHTML = '<option value="">Walk-in</option>';
-    customers.forEach(c => {
-        const opt = document.createElement('option');
-        opt.value = c.id;
-        opt.textContent = c.outstanding_debt > 0
-            ? `${c.name} (owes Ksh ${parseFloat(c.outstanding_debt).toFixed(0)})`
-            : c.name;
-        sel.appendChild(opt);
-    });
-    // Restore prior selection if still valid
-    if (currentVal) sel.value = currentVal;
-}
+function renderCatalog() {
+    const tbody = document.getElementById('products-tbody');
+    const searchTerm = (document.getElementById('pos-search')?.value || '').trim().toLowerCase();
+    const countLabel = document.getElementById('product-count-label');
 
-// ── Feature 2 helper: populate debt-customer-select with only indebted customers ──
-function populateDebtDropdown() {
-    const sel = document.getElementById('debt-customer-select');
-    if (!sel) return;
-    const prior = sel.value;
-    sel.innerHTML = '<option value="">— select customer —</option>';
-    customers
-        .filter(c => parseFloat(c.outstanding_debt || 0) > 0)
-        .forEach(c => {
-            const opt = document.createElement('option');
-            opt.value = c.id;
-            opt.textContent = `${c.name} — Ksh ${parseFloat(c.outstanding_debt).toFixed(2)}`;
-            sel.appendChild(opt);
-        });
-    if (prior) sel.value = prior;
-}
+    let filtered = inventory.filter(item => {
+        // Category filter
+        const matchCat = activeCategory === 'ALL' || 
+            (item.category && item.category.toLowerCase() === activeCategory.toLowerCase());
 
-// ── Feature 3 helper: build Quick Add buttons from is_quick_add flag ──────────
-function renderQuickAddButtons() {
-    const container = document.getElementById('quick-srv-container');
-    if (!container) return;
+        // Search filter
+        const matchSearch = !searchTerm || 
+            item.name.toLowerCase().includes(searchTerm) ||
+            (item.category && item.category.toLowerCase().includes(searchTerm)) ||
+            (item.barcode && item.barcode.toLowerCase().includes(searchTerm));
 
-    // Items flagged is_quick_add=true; fall back to three hardcoded names if column missing
-    let quickItems = inventory.filter(i => i.is_quick_add === true || i.is_quick_add === 1);
-    if (quickItems.length === 0) {
-        // Graceful fallback — same names as the old hardcoded buttons
-        const fallbackNames = ['Print / Copy', 'Typesetting', 'Binding Service'];
-        quickItems = inventory.filter(i => fallbackNames.includes(i.name));
-    }
-
-    quickItems.sort((a, b) => {
-        let idxA = quickAddOrder.indexOf(a.id);
-        let idxB = quickAddOrder.indexOf(b.id);
-        if (idxA === -1) idxA = 9999;
-        if (idxB === -1) idxB = 9999;
-        if (idxA !== idxB) return idxA - idxB;
-        return a.name.localeCompare(b.name);
+        return matchCat && matchSearch;
     });
 
-    if (quickItems.length === 0) {
-        container.innerHTML = '<span class="text-xs text-slate-400 italic col-span-3">No Quick Add items configured. Visit Settings to enable some.</span>';
-        // Reset activeQuick safely
-        activeQuick = null;
+    if (countLabel) {
+        countLabel.textContent = `${filtered.length} of ${inventory.length} items`;
+    }
+
+    if (filtered.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="5" class="py-12 text-center text-slate-400 font-medium">
+                    <div class="text-3xl mb-1">🔍</div>
+                    <div>No hardware products found matching "${searchTerm}"</div>
+                </td>
+            </tr>`;
         return;
     }
 
-    // Default selection = first item if current activeQuick is no longer valid
-    if (!quickItems.find(i => i.name === activeQuick)) {
-        activeQuick = quickItems[0].name;
-    }
-
-    container.innerHTML = quickItems.map(item => {
-        const isActive = item.name === activeQuick;
-        const cls = isActive
-            ? 'quick-srv-btn bg-orange-600 text-white py-2 rounded text-sm font-medium'
-            : 'quick-srv-btn bg-gray-100 text-gray-700 py-2 rounded text-sm font-medium hover:bg-gray-200';
-        return `<button class="${cls}" data-name="${item.name}">${item.name}</button>`;
-    }).join('');
-
-    // Re-attach click handlers
-    container.querySelectorAll('.quick-srv-btn').forEach(b => {
-        b.addEventListener('click', e => window.setQuickServiceUI(e.target.dataset.name));
-    });
-}
-
-
-
-async function fetchTodaysSales() {
-    const today = new Date().toISOString().split('T')[0];
-    const { data } = await supabase.from('sales_log').select('*, inventory(name)').gte('timestamp', `${today}T00:00:00Z`).eq('is_voided', false).order('timestamp', { ascending: false });
-    todaysSales = data || []; renderLedger();
-}
-
-function renderLedger() {
-    let m = 0, c = 0;
-    const tbody = document.getElementById('sales-tbody');
-    tbody.innerHTML = '';
-
-    // Group by item name + payment method
-    const groups = {};
-    todaysSales.forEach(s => {
-        const key = (s.inventory?.name || 'Unknown');
-        if (!groups[key]) {
-            groups[key] = {
-                name: s.inventory?.name || 'Unknown',
-                totalQty: 0,
-                totalAmount: 0,
-                mpesaAmount: 0,
-                cashAmount: 0,
-                entries: []
-            };
-        }
-        groups[key].totalQty += (s.calculated_qty || 0);
-        groups[key].totalAmount += (s.total_charged || 0);
-        if (s.payment_method === 'mpesa') { groups[key].mpesaAmount += s.total_charged; m += s.total_charged; }
-        else { groups[key].cashAmount += s.total_charged; c += s.total_charged; }
-        groups[key].entries.push(s);
-    });
-
-    Object.entries(groups).forEach(([key, grp], idx) => {
-        let methodBadge = '';
-        if (grp.mpesaAmount > 0) methodBadge += '<span class="text-xs font-bold text-slate-700 bg-emerald-50 px-2 py-0.5 rounded-full mr-1">M-Pesa ' + grp.mpesaAmount.toFixed(0) + '</span>';
-        if (grp.cashAmount > 0) methodBadge += '<span class="text-xs font-bold text-orange-700 bg-orange-50 px-2 py-0.5 rounded-full">Cash ' + grp.cashAmount.toFixed(0) + '</span>';
-
-        const safeKey = key.replace(/[^a-zA-Z0-9]/g, '_') + '_' + idx;
-
-        // Summary (grouped) row
-        tbody.innerHTML += `
-        <tr class="hover:bg-gray-50 cursor-pointer border-b" onclick="toggleLedgerGroup('${safeKey}')">
-            <td class="py-2 px-4 font-semibold text-slate-800">${grp.name}</td>
-            <td class="py-2 px-4 text-center text-slate-600">${grp.totalQty}</td>
-            <td class="py-2 px-4 text-right font-bold">Ksh ${grp.totalAmount.toFixed(2)}</td>
-            <td class="py-2 px-4 text-center">${methodBadge}</td>
-            <td class="py-2 px-4 text-center">
-                <span class="text-xs text-orange-500 font-bold select-none">▶ Edit</span>
-            </td>
-        </tr>
-        <tr id="grp-${safeKey}" class="hidden bg-slate-50">
-            <td colspan="5" class="p-0">
-                <table class="w-full text-xs">
-                    <thead><tr class="bg-slate-100 text-slate-500">
-                        <th class="py-1.5 px-6 text-left">Time</th>
-                        <th class="py-1.5 px-4 text-center">Qty</th>
-                        <th class="py-1.5 px-4 text-right">Amount</th>
-                        <th class="py-1.5 px-4 text-center">Method</th>
-                        <th class="py-1.5 px-4 text-center">Del</th>
-                    </tr></thead>
-                    <tbody>
-                        ${grp.entries.map(e => `
-                        <tr class="border-t border-slate-100 hover:bg-red-50" id="entry-row-${e.id}">
-                            <td class="py-1.5 px-6 text-slate-500">${new Date(e.timestamp).toLocaleTimeString()}</td>
-                            <td class="py-1.5 px-4 text-center">${e.calculated_qty}</td>
-                            <td class="py-1.5 px-4 text-right font-semibold">Ksh ${e.total_charged.toFixed(2)}</td>
-                            <td class="py-1.5 px-4 text-center"><button onclick="togglePayment('${e.id}', '${e.payment_method}')" class="px-2 py-0.5 rounded text-xs font-bold ${e.payment_method.toLowerCase() === 'mpesa' ? 'bg-slate-100 text-slate-700 hover:bg-emerald-200' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}" title="Click to change">${e.payment_method.toUpperCase()}</button></td>
-                            <td class="py-1.5 px-4 text-center">
-                                <button onclick="voidSale('${e.id}')" class="text-red-500 hover:text-red-700 font-bold text-base leading-none" title="Void this entry">&times;</button>
-                            </td>
-                        </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
-            </td>
-        </tr>`;
-    });
-
-    document.getElementById('lbl-mpesa').innerText = `Ksh ${m.toFixed(2)}`;
-    document.getElementById('lbl-cash').innerText = `Ksh ${c.toFixed(2)}`;
-}
-
-window.toggleLedgerGroup = (key) => {
-    const row = document.getElementById(`grp-${key}`);
-    if (!row) return;
-    row.classList.toggle('hidden');
-    // Rotate arrow on the toggle button
-    const parentRow = row.previousElementSibling;
-    const arrow = parentRow ? parentRow.querySelector('span.select-none') : null;
-    if (arrow) {
-        arrow.textContent = row.classList.contains('hidden') ? '▶ Edit' : '▼ Close';
-    }
-};
-
-
-window.setQuickServiceUI = function(name) {
-    activeQuick = name;
-    document.querySelectorAll('.quick-srv-btn').forEach(b => {
-        if (b.dataset.name === name) {
-            b.className = 'quick-srv-btn bg-orange-600 text-white py-2 rounded text-sm font-medium shadow-sm transition-all';
+    tbody.innerHTML = filtered.map(item => {
+        // Stock badge color
+        let stockBadge = '';
+        if (item.is_service) {
+            stockBadge = `<span class="px-2 py-0.5 rounded text-xs font-bold bg-slate-100 text-slate-600">Service</span>`;
+        } else if (item.stock_quantity <= 0) {
+            stockBadge = `<span class="px-2 py-0.5 rounded text-xs font-bold bg-red-100 text-red-700">Out of Stock</span>`;
+        } else if (item.stock_quantity <= (item.min_threshold || 10)) {
+            stockBadge = `<span class="px-2 py-0.5 rounded text-xs font-bold bg-amber-100 text-amber-800">${item.stock_quantity} left</span>`;
         } else {
-            b.className = 'quick-srv-btn bg-gray-100 text-gray-700 py-2 rounded text-sm font-medium hover:bg-gray-200 transition-all';
+            stockBadge = `<span class="px-2 py-0.5 rounded text-xs font-bold bg-emerald-100 text-emerald-800">${item.stock_quantity} in stock</span>`;
         }
-    });
-    
-    const bindingContainer = document.getElementById('binding-options-container');
-    const amountInput = document.getElementById('quick-amount');
-    const qtyInput = document.getElementById('quick-qty');
-    const qtyContainer = document.getElementById('quick-qty-container');
-    
-    if (qtyInput) qtyInput.value = 1;
-    
-    const item = inventory.find(i => i.name === name);
-    const isService = item ? (item.is_service === true || item.is_service === 1 || item.is_service === 'true') : true;
 
-    if (qtyContainer) {
-        if (isService || name === 'Binding Service') {
-            qtyContainer.classList.add('hidden');
-        } else {
-            qtyContainer.classList.remove('hidden');
-        }
-    }
+        const barcodeDisplay = item.barcode ? `<span class="font-mono text-xs text-slate-400">${item.barcode}</span>` : '<span class="text-slate-300">-</span>';
 
-    if (bindingContainer) {
-        if (name === 'Binding Service') {
-            bindingContainer.classList.remove('hidden');
-            // Re-render so the active item gets highlighted
-            renderBindingOptions();
-            // If a ring is already selected, fill the amount; otherwise auto-pick the first
-            if (!activeBindingItem) {
-                // Try first item in active group, or first spiral
-                const firstId = activeBindingGroup?.items?.[0]?.id
-                    || inventory.find(i => { const n = i.name.toLowerCase(); return n.includes('spiral') && !n.includes('a5'); })?.id;
-                if (firstId) window.selectBindingItem(firstId);
-            } else {
-                if(amountInput) amountInput.value = activeBindingItem.selling_price;
-            }
-        } else {
-            bindingContainer.classList.add('hidden');
-            
-            // Auto-populate price if recorded in inventory
-            if (amountInput) {
-                if (item && item.selling_price > 0) {
-                    amountInput.value = item.selling_price;
-                } else {
-                    amountInput.value = ''; // clear if no fixed price
-                }
-                amountInput.focus();
-            }
-        }
-    }
-};
-
-// ── Feature 1: Add New Customer modal wiring ──────────────────────────────────
-function openAddCustomerModal() {
-    document.getElementById('new-cust-name').value = '';
-    document.getElementById('new-cust-phone').value = '';
-    document.getElementById('new-cust-error').classList.add('hidden');
-    document.getElementById('modal-add-customer').classList.remove('hidden');
-    setTimeout(() => document.getElementById('new-cust-name').focus(), 100);
-}
-
-document.getElementById('btn-add-cust-inline').addEventListener('click', openAddCustomerModal);
-
-document.getElementById('btn-cancel-new-cust').addEventListener('click', () => {
-    document.getElementById('modal-add-customer').classList.add('hidden');
-});
-
-document.getElementById('btn-save-new-cust').addEventListener('click', async () => {
-    const name = document.getElementById('new-cust-name').value.trim();
-    const phone = document.getElementById('new-cust-phone').value.trim();
-    const errEl = document.getElementById('new-cust-error');
-
-    if (!name) {
-        errEl.textContent = 'Name is required.';
-        errEl.classList.remove('hidden');
-        return;
-    }
-
-    const btn = document.getElementById('btn-save-new-cust');
-    btn.disabled = true; btn.textContent = 'Saving...';
-
-    try {
-        const { data, error } = await supabase
-            .from('customers')
-            .insert([{ name, phone, outstanding_debt: 0 }])
-            .select()
-            .single();
-        if (error) throw error;
-
-        // Update local cache and refresh dropdowns
-        customers.push(data);
-        customers.sort((a, b) => a.name.localeCompare(b.name));
-        localStorage.setItem('litaj_customers_cache', JSON.stringify(customers));
-        populateCustomerDropdown();
-        populateDebtDropdown();
-    populateDebtSaleDropdown();
-
-        // Auto-select the newly created customer in pos-customer
-        document.getElementById('pos-customer').value = data.id;
-
-        document.getElementById('modal-add-customer').classList.add('hidden');
-    } catch (err) {
-        errEl.textContent = 'Error: ' + err.message;
-        errEl.classList.remove('hidden');
-    } finally {
-        btn.disabled = false; btn.textContent = 'Save Customer';
-    }
-});
-
-// ── Feature 2: Debt Collection wiring ────────────────────────────────────────
-document.getElementById('debt-customer-select').addEventListener('change', function() {
-    const cust = customers.find(c => c.id == this.value);
-    const balEl = document.getElementById('debt-current-balance');
-    balEl.value = cust ? `Ksh ${parseFloat(cust.outstanding_debt || 0).toFixed(2)}` : '';
-    document.getElementById('debt-status-msg').classList.add('hidden');
-    document.getElementById('debt-amount-input').value = '';
-});
-
-document.getElementById('btn-collect-debt').addEventListener('click', async () => {
-    const custId = document.getElementById('debt-customer-select').value;
-    const amount = parseFloat(document.getElementById('debt-amount-input').value);
-    const statusEl = document.getElementById('debt-status-msg');
-
-    if (!custId) return alert('Please select a customer.');
-    if (!amount || amount <= 0) return alert('Enter a valid amount.');
-
-    const cust = customers.find(c => c.id == custId);
-    if (!cust) return;
-
-    const currentDebt = parseFloat(cust.outstanding_debt || 0);
-    if (amount > currentDebt) {
-        return alert(`Amount exceeds balance. Max payable: Ksh ${currentDebt.toFixed(2)}`);
-    }
-
-    const newDebt = Math.max(0, currentDebt - amount);
-    const btn = document.getElementById('btn-collect-debt');
-    btn.disabled = true; btn.textContent = 'Processing...';
-
-    const method = document.getElementById('debt-method-select').value;
-
-    try {
-        // Ensure we have an item to link to (foreign key constraint)
-        if (!inventory || inventory.length === 0) {
-            throw new Error("No items in inventory to link debt collection.");
-        }
-        const dummyItemId = inventory[0].id;
-
-        const { error: dbError } = await supabase
-            .from('customers')
-            .update({ outstanding_debt: newDebt })
-            .eq('id', custId);
-        if (dbError) throw dbError;
-
-        // Insert into sales_log for daily tracking
-        const { error: logError } = await supabase.from('sales_log').insert([{
-            item_id: dummyItemId,
-            quantity: 1, // dummy quantity
-            total_charged: amount,
-            calculated_profit: 0,
-            payment_method: method,
-            status: 'debt_collection'
-        }]);
-        if (logError) throw logError;
-
-        // Update local cache
-        cust.outstanding_debt = newDebt;
-        localStorage.setItem('litaj_customers_cache', JSON.stringify(customers));
-        populateCustomerDropdown();
-        populateDebtDropdown();
-    populateDebtSaleDropdown();
-
-        document.getElementById('debt-amount-input').value = '';
-        document.getElementById('debt-current-balance').value = `Ksh ${newDebt.toFixed(2)}`;
-        document.getElementById('debt-customer-select').value = '';
-        document.getElementById('debt-current-balance').value = '';
-
-        statusEl.textContent = `✅ Collected Ksh ${amount.toFixed(2)} from ${cust.name}. Remaining balance: Ksh ${newDebt.toFixed(2)}`;
-        statusEl.classList.remove('hidden');
-        setTimeout(() => statusEl.classList.add('hidden'), 5000);
-    } catch (err) {
-        alert('Error collecting debt: ' + err.message);
-    } finally {
-        btn.disabled = false; btn.textContent = 'Collect Payment';
-    }
-});
-
-
-
-function updateQuickAmountFromQty() {
-    const qtyInput = document.getElementById('quick-qty');
-    const amountInput = document.getElementById('quick-amount');
-    if (!qtyInput || !amountInput) return;
-    
-    const qty = parseInt(qtyInput.value) || 1;
-    if (activeQuick !== 'Binding Service') {
-        const item = inventory.find(i => i.name === activeQuick);
-        if (item && item.selling_price > 0) {
-            amountInput.value = item.selling_price * qty;
-        }
-    }
-}
-
-document.getElementById('quick-qty-plus')?.addEventListener('click', () => {
-    const input = document.getElementById('quick-qty');
-    if (input) {
-        input.value = (parseInt(input.value) || 1) + 1;
-        updateQuickAmountFromQty();
-    }
-});
-
-document.getElementById('quick-qty-minus')?.addEventListener('click', () => {
-    const input = document.getElementById('quick-qty');
-    if (input) {
-        const newVal = (parseInt(input.value) || 1) - 1;
-        input.value = newVal < 1 ? 1 : newVal;
-        updateQuickAmountFromQty();
-    }
-});
-document.getElementById('quick-pay-mpesa').addEventListener('click', () => window.setQuickPayUI('M-Pesa'));
-document.getElementById('quick-pay-cash').addEventListener('click', () => window.setQuickPayUI('Cash'));
-
-
-document.getElementById('quick-log-btn').addEventListener('click', async () => {
-      const amt = parseFloat(document.getElementById('quick-amount').value); if(!amt) return;
-
-      let logItem = null, logQty = 1, logProfit = amt, isBinding = (activeQuick === 'Binding Service');
-
-      if (isBinding) {
-          const isNoStock = activeBindingGroup && activeBindingGroup.noStock;
-          const ringItem = activeBindingItem || (activeBindingGroup && activeBindingGroup.items && activeBindingGroup.items[0] ? inventory.find(i => i.id === activeBindingGroup.items[0].id) : null);
-
-          if (ringItem && !isNoStock) {
-              // Service price per binding job comes from the GROUP NAME (e.g. "KSH 50" → 50)
-              const groupNamePrice = activeBindingGroup
-                  ? parseFloat((activeBindingGroup.name || '').replace(/[^0-9.]/g, '')) || null
-                  : null;
-              const standardPrice = groupNamePrice || ringItem.selling_price || 50;
-              logQty = Math.max(1, Math.floor(amt / standardPrice));
-              logItem = ringItem;
-              logProfit = amt - (ringItem.buying_price * logQty);
-              // Deduct ring stock by quantity
-              const newRingStock = (logItem.stock_quantity || 0) - logQty;
-              try {
-                  // if (navigator.onLine) await supabase.from('inventory').update({ stock_quantity: newRingStock }).eq('id', logItem.id); /* Handled by Postgres Trigger */
-              } catch(e) {}
-              if (logItem) logItem.stock_quantity = newRingStock;
-          } else {
-              // Tape binding or no item configured — use generic Binding Service item
-              let svcItem = inventory.find(i => i.name === 'Binding Service');
-              if (!svcItem) { 
-                  try {
-                      if (navigator.onLine) {
-                          const {data} = await supabase.from('inventory').insert([{name: 'Binding Service', type: 'variable', selling_price: 0, is_service: true}]).select().single(); 
-                          svcItem = data; 
-                      } else {
-                          svcItem = { id: 'temp-binding-srv', name: 'Binding Service', type: 'variable', selling_price: 0, is_service: true };
-                      }
-                  } catch(e) { svcItem = { id: 'temp-binding-srv', name: 'Binding Service', type: 'variable', selling_price: 0, is_service: true }; }
-                  inventory.push(svcItem); 
-              }
-              logItem = svcItem;
-          }
-          // Always deduct linked resources (covers) for any binding job
-          await deductBindingMaterials(logQty);
-            } else {
-          let item = inventory.find(i => i.name === activeQuick);
-          if (!item) { 
-              try {
-                  if (navigator.onLine) {
-                      const {data} = await supabase.from('inventory').insert([{name: activeQuick, type: 'variable', selling_price: 0, is_service: true}]).select().single(); 
-                      item = data; 
-                  } else {
-                      item = { id: 	emp- + activeQuick.replace(/\s+/g,'-'), name: activeQuick, type: 'variable', selling_price: 0, is_service: true };
-                  }
-              } catch(e) { item = { id: 	emp- + activeQuick.replace(/\s+/g,'-'), name: activeQuick, type: 'variable', selling_price: 0, is_service: true }; }
-              inventory.push(item); 
-          }
-          logItem = item;
-          
-          const qtyInput = document.getElementById('quick-qty');
-          logQty = qtyInput ? (parseInt(qtyInput.value) || 1) : 1;
-          logProfit = amt - ((logItem.buying_price || 0) * logQty);
-
-          if (!logItem.is_service && typeof logItem.stock_quantity === 'number') {
-              const newStock = logItem.stock_quantity - logQty;
-              try {
-                  // if (navigator.onLine) await supabase.from('inventory').update({ stock_quantity: newStock }).eq('id', logItem.id); /* Handled by Postgres Trigger */
-                  logItem.stock_quantity = newStock;
-              } catch(e) {}
-          }
-      }
-
-      const _qRes = await insertSaleWithOfflineSupport(supabase, {
-          item_id: logItem.id, total_charged: amt, calculated_qty: logQty,
-          calculated_profit: logProfit, cashier_id: currentUser.id,
-          payment_method: quickPay.toLowerCase().replace('-', '')
-      });
-            if (_qRes.offline) {
-          document.getElementById('quick-amount').value = '';
-          if(document.getElementById('quick-qty')) document.getElementById('quick-qty').value = 1;
-          if(window.setQuickPayUI) window.setQuickPayUI('M-Pesa');
-          if(window.setQuickServiceUI) window.setQuickServiceUI('Print / Copy');
-          alert('No internet - sale saved locally and will sync when back online.');
-          setTimeout(()=>document.getElementById('quick-amount').focus(), 100);
-          return;
-      }
-
-      document.getElementById('quick-amount').value = '';
-      if(document.getElementById('quick-qty')) document.getElementById('quick-qty').value = 1;
-      if(window.setQuickPayUI) window.setQuickPayUI('M-Pesa');
-      if(window.setQuickServiceUI) window.setQuickServiceUI('Print / Copy');
-      fetchTodaysSales();
-      setTimeout(()=>document.getElementById('quick-amount').focus(), 100);
-});
-
-
-function handlePosSearch(e) {
-    const term = e.target ? e.target.value.toLowerCase() : e.toLowerCase();
-    const resDiv = document.getElementById('pos-search-results');
-    
-    let matches = inventory;
-    if(term) {
-        matches = inventory.filter(i => i.name.toLowerCase().includes(term));
-    }
-    
-    if(matches.length === 0) {
-        resDiv.innerHTML = '<div class="p-3 text-sm text-gray-500 font-medium">No items found</div>';
-    } else {
-        resDiv.innerHTML = matches.map(i => `<div class="p-3 text-sm cursor-pointer hover:bg-orange-50 border-b flex justify-between items-center transition-colors" onclick="selectPosItem('${i.id}', '${i.name.replace(/'/g, "\\'")}', ${i.selling_price})"><div class="font-bold text-gray-800">${i.name}</div><div class="font-bold text-orange-600">Ksh ${i.selling_price}</div></div>`).join('');
-    }
-    resDiv.classList.remove('hidden');
-}
-
-document.getElementById('pos-item-search').addEventListener('focus', (e) => handlePosSearch(e));
-document.getElementById('pos-item-search').addEventListener('input', (e) => {
-    document.getElementById('pos-item-id').value = ''; 
-    document.getElementById('pos-total').value = '';
-    document.getElementById('kyocera-fields').classList.add('hidden');
-    handlePosSearch(e);
-});
-
-
-window.selectPosItem = (id, name, price) => {
-    document.getElementById('pos-item-id').value = id;
-    document.getElementById('pos-item-search').value = name;
-    document.getElementById('pos-search-results').classList.add('hidden');
-    
-    const qty = parseInt(document.getElementById('pos-qty').value || 1);
-    document.getElementById('pos-total').value = (price * qty).toFixed(2);
-    
-    document.getElementById('kyocera-fields').className = name.toLowerCase().includes('kyocera') ? 'p-3 bg-orange-50 border border-orange-100 rounded-lg mb-4' : 'hidden';
-};
-
-document.addEventListener('click', (e) => {
-    if(!e.target.closest('#pos-item-search') && !e.target.closest('#pos-search-results')) {
-        const res = document.getElementById('pos-search-results');
-        if(res) res.classList.add('hidden');
-    }
-});
-
-document.getElementById('pos-qty').addEventListener('input', () => {
-    const id = document.getElementById('pos-item-id').value;
-    if(!id) return;
-    const item = inventory.find(i => i.id === id);
-    if(item) {
-        document.getElementById('pos-total').value = (item.selling_price * parseInt(document.getElementById('pos-qty').value || 1)).toFixed(2);
-    }
-});
-
-['main-pay-mpesa', 'main-pay-cash'].forEach(id => document.getElementById(id).addEventListener('click', async (e) => {
-    const amt = parseFloat(document.getElementById('pos-total').value), qty = parseInt(document.getElementById('pos-qty').value);
-    const item = inventory.find(i => i.id === document.getElementById('pos-item-id').value);
-    
-    if(!item || !amt) return alert('Select an item and enter amount');
-    
-    // Quick validation before submitting
-    e.target.innerText = 'Processing...';
-    e.target.disabled = true;
-    
-    try {
-        let bc = item.buying_price || 0, kyo = 0;
-        if(!document.getElementById('kyocera-fields').classList.contains('hidden')) { 
-            kyo = parseInt(document.getElementById('kyo-pages').value); 
-            bc = kyo * parseFloat(document.getElementById('kyo-cost-pp').value); 
-        }
-        
-        const logPayload = {
-              item_id: item.id, 
-              total_charged: amt, 
-              calculated_qty: qty, 
-              calculated_profit: amt - (bc*qty), 
-              cashier_id: currentUser.id, 
-              payment_method: e.target.id.includes('mpesa') ? 'mpesa' : 'cash', 
-              kyocera_pages: kyo
-          };
-          
-          const qRes = await insertSaleWithOfflineSupport(supabase, logPayload);
-          if (qRes.offline) {
-              alert('No internet — sale saved locally and will sync when back online.');
-          }
-        
-        // Reset form
-        document.getElementById('pos-item-search').value = '';
-          setTimeout(()=>document.getElementById('quick-amount').focus(), 100);
-        document.getElementById('pos-item-id').value = '';
-        document.getElementById('pos-total').value = '';
-        document.getElementById('pos-qty').value = 1;
-        fetchTodaysSales();
-    } finally {
-        e.target.innerText = e.target.id.includes('mpesa') ? 'M-Pesa' : 'Cash';
-        e.target.disabled = false;
-    }
-}));
-
-
-// --- Document Builder Logic ---
-let isDocMode = false;
-let docCart = [];
-
-let isDebtMode = false;
-function resetModes() {
-    isDocMode = false;
-    isDebtMode = false;
-    document.getElementById('mode-direct').className = "px-3 py-1 text-sm font-bold text-gray-500 hover:text-gray-700 rounded-md transition-all";
-    document.getElementById('mode-doc').className = "px-3 py-1 text-sm font-bold text-gray-500 hover:text-gray-700 rounded-md transition-all";
-    const modeDebt = document.getElementById('mode-debt');
-    if(modeDebt) modeDebt.className = "px-3 py-1 text-sm font-bold text-gray-500 hover:text-gray-700 rounded-md transition-all";
-    
-    document.getElementById('doc-actions').classList.add('hidden');
-    document.getElementById('direct-actions').classList.remove('hidden');
-    document.getElementById('doc-cart-panel').classList.add('hidden');
-    
-    document.getElementById('debt-customer-container').classList.add('hidden');
-    document.getElementById('main-pay-mpesa').classList.remove('hidden');
-    document.getElementById('main-pay-cash').classList.remove('hidden');
-    const mainPayDebt = document.getElementById('main-pay-debt');
-    if(mainPayDebt) mainPayDebt.classList.add('hidden');
-    
-    const btnDebtCart = document.getElementById('btn-debt-cart');
-    if(btnDebtCart) btnDebtCart.classList.add('hidden');
-    const btnDlQuote = document.getElementById('btn-dl-quote');
-    const btnRecMpesa = document.getElementById('btn-receipt-mpesa');
-    const btnRecCash = document.getElementById('btn-receipt-cash');
-    if(btnDlQuote) btnDlQuote.classList.remove('hidden');
-    if(btnRecMpesa) btnRecMpesa.classList.remove('hidden');
-    if(btnRecCash) btnRecCash.classList.remove('hidden');
-}
-
-document.getElementById('mode-direct').addEventListener('click', () => {
-    resetModes();
-    document.getElementById('mode-direct').className = "px-3 py-1 text-sm font-bold bg-white shadow-sm rounded-md text-orange-600 transition-all";
-});
-
-document.getElementById('mode-doc').addEventListener('click', () => {
-    resetModes();
-    isDocMode = true;
-    document.getElementById('mode-doc').className = "px-3 py-1 text-sm font-bold bg-white shadow-sm rounded-md text-orange-600 transition-all";
-    document.getElementById('doc-actions').classList.remove('hidden');
-    document.getElementById('direct-actions').classList.add('hidden');
-    document.getElementById('doc-cart-panel').classList.remove('hidden');
-});
-
-const modeDebtBtn = document.getElementById('mode-debt');
-if(modeDebtBtn) {
-    modeDebtBtn.addEventListener('click', () => {
-        resetModes();
-        isDebtMode = true;
-        modeDebtBtn.className = "px-3 py-1 text-sm font-bold bg-white shadow-sm rounded-md text-orange-600 transition-all";
-        
-        // Show the cart for debt mode
-        document.getElementById('doc-actions').classList.remove('hidden');
-        document.getElementById('direct-actions').classList.remove('hidden');
-        
-        document.getElementById('main-pay-mpesa').classList.add('hidden');
-        document.getElementById('main-pay-cash').classList.add('hidden');
-        const mainPayDebt = document.getElementById('main-pay-debt');
-        if(mainPayDebt) mainPayDebt.classList.remove('hidden');
-        
-        // Also show the Cart panel
-        document.getElementById('doc-cart-panel').classList.remove('hidden');
-        document.getElementById('debt-customer-container').classList.remove('hidden');
-        
-        // Inside the cart, hide the standard receipt buttons and show "Process Debt"
-        const btnDlQuote = document.getElementById('btn-dl-quote');
-        const btnRecMpesa = document.getElementById('btn-receipt-mpesa');
-        const btnRecCash = document.getElementById('btn-receipt-cash');
-        if(btnDlQuote) btnDlQuote.classList.add('hidden');
-        if(btnRecMpesa) btnRecMpesa.classList.add('hidden');
-        if(btnRecCash) btnRecCash.classList.add('hidden');
-        
-        const btnDebtCart = document.getElementById('btn-debt-cart');
-        if(btnDebtCart) btnDebtCart.classList.remove('hidden');
-    });
-}
-
-function renderDocCart() {
-    const tbody = document.getElementById('doc-cart-tbody');
-    tbody.innerHTML = '';
-    let total = 0;
-    docCart.forEach((item, idx) => {
-        total += item.total;
-        tbody.innerHTML += `
-            <tr class="hover:bg-gray-100">
-                <td class="p-2">${item.name}</td>
-                <td class="p-2 text-center">${item.qty}</td>
-                <td class="p-2 text-right">Ksh ${item.total.toFixed(2)}</td>
-                <td class="p-2 text-center text-red-500 cursor-pointer" onclick="removeDocItem(${idx})">&times;</td>
+        return `
+            <tr class="product-row transition border-b border-slate-100" data-id="${item.id}">
+                <td class="py-3 px-3">
+                    <div class="font-bold text-slate-900 leading-tight">${item.name}</div>
+                    <div class="text-[11px] text-slate-400">${barcodeDisplay}</div>
+                </td>
+                <td class="py-3 px-3">
+                    <span class="text-xs font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-600">${item.category || 'General'}</span>
+                </td>
+                <td class="py-3 px-3 text-right font-black text-slate-900 text-sm">
+                    KSh ${parseFloat(item.selling_price || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                </td>
+                <td class="py-3 px-3 text-center">
+                    ${stockBadge}
+                </td>
+                <td class="py-3 px-3 text-center">
+                    <button class="btn-add-item px-3 py-1.5 bg-orange-600 hover:bg-orange-700 active:bg-orange-800 text-white font-bold rounded-lg text-xs transition shadow-sm" data-id="${item.id}">
+                        + Add
+                    </button>
+                </td>
             </tr>
         `;
+    }).join('');
+
+    // Attach click events
+    tbody.querySelectorAll('.product-row').forEach(row => {
+        row.addEventListener('click', (e) => {
+            // Avoid double trigger if add button clicked
+            if (e.target.closest('.btn-add-item')) return;
+            const id = row.dataset.id;
+            const item = inventory.find(i => i.id === id);
+            if (item) addToCart(item, 1);
+        });
     });
-    document.getElementById('doc-cart-total').innerText = `Ksh ${total.toFixed(2)}`;
+
+    tbody.querySelectorAll('.btn-add-item').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const id = btn.dataset.id;
+            const item = inventory.find(i => i.id === id);
+            if (item) addToCart(item, 1);
+        });
+    });
 }
 
-window.removeDocItem = (idx) => {
-    docCart.splice(idx, 1);
-    renderDocCart();
-};
+// Search input handling
+const searchInput = document.getElementById('pos-search');
+const btnClearSearch = document.getElementById('btn-clear-search');
 
-document.getElementById('btn-add-to-doc').addEventListener('click', () => {
-    const amt = parseFloat(document.getElementById('pos-total').value);
-    const qty = parseInt(document.getElementById('pos-qty').value);
-    const item = inventory.find(i => i.id === document.getElementById('pos-item-id').value);
-    
-    if(!item || !amt) return alert('Select an item and enter amount');
-    
-    let bc = item.buying_price || 0, kyo = 0;
-    if(!document.getElementById('kyocera-fields').classList.contains('hidden')) { 
-        kyo = parseInt(document.getElementById('kyo-pages').value) || 0; 
-        bc = kyo * parseFloat(document.getElementById('kyo-cost-pp').value || 0); 
+searchInput?.addEventListener('input', () => {
+    if (btnClearSearch) {
+        btnClearSearch.classList.toggle('hidden', !searchInput.value.trim());
     }
-    
-    docCart.push({
-        id: item.id,
-        name: item.name,
-        qty: qty,
-        price: amt / qty,
-        total: amt,
-        buying_price: bc,
-        kyocera_pages: kyo
-    });
-    
-    // Reset inputs
-    document.getElementById('pos-item-search').value = '';
-    document.getElementById('pos-item-id').value = '';
-    document.getElementById('pos-total').value = '';
-    document.getElementById('pos-qty').value = 1;
-    document.getElementById('kyocera-fields').classList.add('hidden');
-    
-    renderDocCart();
+    renderCatalog();
 });
 
-document.getElementById('btn-clear-doc').addEventListener('click', () => {
-    if(confirm('Clear document cart?')) { docCart = []; renderDocCart(); }
+btnClearSearch?.addEventListener('click', () => {
+    searchInput.value = '';
+    btnClearSearch.classList.add('hidden');
+    searchInput.focus();
+    renderCatalog();
 });
 
-function generatePDF(type, paymentMethod = '') {
-    if (docCart.length === 0) return alert('Document cart is empty.');
-    
-    const { jsPDF } = window.jspdf;
-    const doc = new jsPDF();
-    const custId = document.getElementById('pos-customer').value;
-    const cust = customers.find(c => c.id === custId) || { name: 'Walk-in Customer' };
-    
-    // Header
-    doc.setFillColor(30, 41, 59);
-    doc.rect(0, 0, 210, 30, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(22);
-    doc.setFont("helvetica", "bold");
-    doc.text("Litaj Hardware", 14, 20);
-    
-    doc.setFontSize(14);
-    doc.text(type === 'quote' ? 'QUOTATION' : 'RECEIPT', 170, 20, { align: 'right' });
-    
-    // Bill To
-    doc.setTextColor(50, 50, 50);
-    doc.setFontSize(10);
-    doc.text("Bill To:", 14, 45);
-    doc.setFontSize(12);
-    doc.text(cust.name, 14, 52);
-    if(cust.phone) doc.text(`Phone: ${cust.phone}`, 14, 58);
-    
-    // Date & Ref
-    doc.setFontSize(10);
-    doc.text(`Date: ${new Date().toLocaleDateString()}`, 170, 45, { align: 'right' });
-    doc.text(`Ref: ${Math.random().toString(36).substr(2, 6).toUpperCase()}`, 170, 52, { align: 'right' });
-    if(paymentMethod) doc.text(`Paid via: ${paymentMethod}`, 170, 59, { align: 'right' });
-    
-    // Table
-    const tableData = docCart.map(item => [
-        item.name,
-        item.qty,
-        `Ksh ${item.price.toFixed(2)}`,
-        `Ksh ${item.total.toFixed(2)}`
-    ]);
-    
-    let sum = 0; docCart.forEach(i => sum += i.total);
-    tableData.push(['', '', 'TOTAL', `Ksh ${sum.toFixed(2)}`]);
-    
-    doc.autoTable({
-        startY: 70,
-        head: [['Description', 'Qty', 'Unit Price', 'Amount']],
-        body: tableData,
-        theme: 'striped',
-        headStyles: { fillColor: [234, 88, 12] },
-        styles: { font: 'helvetica', fontSize: 10 },
-        columnStyles: { 3: { fontStyle: 'bold' } },
-        didParseCell: function (data) {
-            if (data.row.index === tableData.length - 1) {
-                data.cell.styles.fontStyle = 'bold';
-                data.cell.styles.fillColor = [240, 240, 240];
-            }
-        }
+document.getElementById('btn-refresh-inv')?.addEventListener('click', loadInventory);
+
+// Category Chips Filtering
+document.querySelectorAll('.cat-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+        document.querySelectorAll('.cat-chip').forEach(c => {
+            c.classList.remove('bg-orange-600', 'text-white', 'shadow-sm');
+            c.classList.add('bg-slate-100', 'text-slate-700');
+        });
+        chip.classList.add('bg-orange-600', 'text-white', 'shadow-sm');
+        chip.classList.remove('bg-slate-100', 'text-slate-700');
+        activeCategory = chip.dataset.category;
+        renderCatalog();
     });
-    
-    const finalY = doc.lastAutoTable.finalY || 80;
-    doc.setFontSize(9);
-    doc.setTextColor(150, 150, 150);
-    doc.text("Thank you for your business!", 105, finalY + 20, { align: 'center' });
-    
-    doc.save(`${type === 'quote' ? 'Quotation' : 'Receipt'}_${cust.name.replace(/\s+/g, '_')}_${new Date().getTime()}.pdf`);
-}
+});
 
-async function processReceipt(paymentMethod) {
-    if (docCart.length === 0) return alert('Cart is empty.');
-    
-    // Disable buttons
-    document.getElementById('btn-receipt-mpesa').disabled = true;
-    document.getElementById('btn-receipt-cash').disabled = true;
-    document.getElementById('btn-receipt-mpesa').innerText = 'Processing...';
-    
-    try {
-        const logs = docCart.map(i => ({
-            item_id: i.id,
-            total_charged: i.total,
-            calculated_qty: i.qty,
-            calculated_profit: i.total - (i.buying_price * i.qty),
-            cashier_id: currentUser.id,
-            payment_method: paymentMethod.toLowerCase().replace('-', ''),
-            kyocera_pages: i.kyocera_pages
-        }));
-        
-        for (const log of logs) {
-            const qRes = await insertSaleWithOfflineSupport(supabase, log);
-            if (qRes.offline) {
-                // If one is offline, all will be offline. We can just alert once at the end.
-            }
-        }
-        if (!navigator.onLine) {
-            alert('No internet — receipt sales saved locally and will sync when back online.');
-        }
-        
-        generatePDF('receipt', paymentMethod);
-        
-        docCart = [];
-        renderDocCart();
-        fetchTodaysSales();
-    } catch(err) {
-        alert('Error logging receipt: ' + err.message);
-    } finally {
-        document.getElementById('btn-receipt-mpesa').disabled = false;
-        document.getElementById('btn-receipt-cash').disabled = false;
-        document.getElementById('btn-receipt-mpesa').innerText = 'Receipt (M-Pesa)';
-    }
-}
+// Quick Barcode Entry in Footer
+document.getElementById('btn-quick-barcode-add')?.addEventListener('click', handleBarcodeQuickAdd);
+document.getElementById('quick-barcode')?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') handleBarcodeQuickAdd();
+});
 
-document.getElementById('btn-dl-quote').addEventListener('click', () => generatePDF('quote'));
-document.getElementById('btn-receipt-mpesa').addEventListener('click', () => processReceipt('M-Pesa'));
-document.getElementById('btn-receipt-cash').addEventListener('click', () => processReceipt('Cash'));
+function handleBarcodeQuickAdd() {
+    const barcodeInput = document.getElementById('quick-barcode');
+    const qtyInput = document.getElementById('quick-barcode-qty');
+    const code = barcodeInput.value.trim().toLowerCase();
+    const qty = parseInt(qtyInput.value) || 1;
 
-loadData();
+    if (!code) return;
 
+    // Match by barcode, or name if barcode not found
+    const match = inventory.find(i => 
+        (i.barcode && i.barcode.toLowerCase() === code) || 
+        i.name.toLowerCase() === code ||
+        i.name.toLowerCase().includes(code)
+    );
 
-
-
-
-
-
-
-
-window.togglePayment = async (id, currentMethod) => {
-    const newMethod = currentMethod.toLowerCase() === 'cash' ? 'mpesa' : 'cash';
-    if (!confirm(`Change payment method to ${newMethod.toUpperCase()}?`)) return;
-    try {
-        const { error } = await supabase.from('sales_log').update({ payment_method: newMethod }).eq('id', id);
-        if (error) throw error;
-        fetchTodaysSales();
-    } catch(err) {
-        alert('Error updating payment: ' + err.message);
-    }
-};
-
-window.voidSale = async (id) => {
-    if (!confirm('Are you sure you want to void this entry?')) return;
-    try {
-        const { error } = await supabase.from('sales_log').update({
-            is_voided: true,
-            voided_by: currentUser.id
-        }).eq('id', id);
-        if (error) throw error;
-        fetchTodaysSales();
-    } catch(err) {
-        alert('Error voiding sale: ' + err.message);
-    }
-};
-
-
-// ─── LEDGER TOGGLE ────────────────────────────────────────────────────────────
-let ledgerVisible = false;
-
-// Ledger Auto-hide logic (5 minutes)
-let ledgerTimer;
-function resetLedgerTimer() {
-    clearTimeout(ledgerTimer);
-    if (ledgerVisible) {
-        ledgerTimer = setTimeout(() => {
-            if (ledgerVisible) {
-                const btn = document.getElementById('btn-toggle-ledger');
-                if (btn) btn.click();
-            }
-        }, 5 * 60 * 1000);
-    }
-}
-document.addEventListener('mousemove', resetLedgerTimer);
-document.addEventListener('keydown', resetLedgerTimer);
-
-document.getElementById('btn-toggle-ledger').addEventListener('click', () => {
-    ledgerVisible = !ledgerVisible;
-    const table = document.getElementById('ledger-table-wrap');
-    const totals = document.getElementById('ledger-totals');
-    const icon = document.getElementById('ledger-toggle-icon');
-    const label = document.getElementById('ledger-toggle-label');
-    if (ledgerVisible) {
-        table.classList.remove('hidden');
-        totals.classList.remove('hidden');
-        icon.textContent = '👁️';
-        label.textContent = 'Hide';
+    if (match) {
+        addToCart(match, qty);
+        barcodeInput.value = '';
+        qtyInput.value = '1';
+        barcodeInput.focus();
     } else {
-        table.classList.add('hidden');
-        totals.classList.add('hidden');
-        icon.textContent = '🚫';
-        label.textContent = 'Show';
-    }
-    resetLedgerTimer();
-});
-
-// Initialize timer on load
-resetLedgerTimer();
-
-// ─── QUICK EXPENSE LOGGER ─────────────────────────────────────────────────────
-
-// Fetch users for wage dropdown
-async function loadUsersForWage() {
-    const { data } = await supabase.from('users').select('id, username');
-    const sel = document.getElementById('exp-wage-user');
-    if (sel && data) {
-        sel.innerHTML = '<option value="">Select cashier...</option>' + data.map(u => `<option value="${u.id}">${u.username}</option>`).join('');
+        alert(`No product found matching code or name: "${code}"`);
     }
 }
-loadUsersForWage();
 
-let activeExpenseTab = 'lunch';
+// ====================================================================
+// 2. CART MANAGEMENT (VEGAS POS LOGIC)
+// ====================================================================
+function addToCart(product, qtyToAdd = 1) {
+    const existingIndex = cart.findIndex(c => c.id === product.id);
 
-document.querySelectorAll('.exp-tab').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-        const type = e.target.dataset.type;
-        activeExpenseTab = type;
-        
-        // Reset tabs UI
-        document.querySelectorAll('.exp-tab').forEach(b => {
-            b.className = 'exp-tab flex-1 text-xs py-1 rounded font-bold bg-slate-200 text-slate-600 transition-colors';
-        });
-        e.target.className = 'exp-tab flex-1 text-xs py-1 rounded font-bold bg-slate-700 text-white transition-colors';
-
-        // Toggle fields
-        const wageFields = document.getElementById('exp-wage-fields');
-        const descField = document.getElementById('exp-desc');
-        const amtField = document.getElementById('exp-amount');
-        
-        wageFields.classList.add('hidden');
-        if(descField) descField.classList.add('hidden');
-        
-        if (type === 'wage') {
-            wageFields.classList.remove('hidden');
-            amtField.placeholder = "Wage Amount (Ksh)";
-        } else if (type === 'other') {
-            if(descField) {
-                descField.classList.remove('hidden');
-                descField.placeholder = "Description...";
-            }
-            amtField.placeholder = "Amount (Ksh)";
-        } else {
-            amtField.placeholder = "Amount (Ksh)";
-        }
-    });
-});
-
-document.getElementById('btn-log-expense').addEventListener('click', async () => {
-    let desc = '';
-    let amt = parseFloat(document.getElementById('exp-amount').value);
-    let targetUserId = null;
-    
-    if (activeExpenseTab === 'lunch') desc = 'Lunch';
-    else if (activeExpenseTab === 'transport') desc = 'Transport';
-    else if (activeExpenseTab === 'wage') {
-        const sel = document.getElementById('exp-wage-user');
-        const userId = sel.value;
-        if (!userId) return alert('Select a cashier for the wage log.');
-        const userName = sel.options[sel.selectedIndex].text;
-        desc = `Wage - ${userName}`;
-        targetUserId = userId;
-    }
-    else if (activeExpenseTab === 'other') {
-        const descField = document.getElementById('exp-desc');
-        desc = descField ? descField.value.trim() : 'Other';
-    }
-
-    if (!desc || isNaN(amt) || amt <= 0) return alert('Enter valid details and amount.');
-    
-    const btn = document.getElementById('btn-log-expense');
-    btn.disabled = true; btn.textContent = 'Logging...';
-    
-    try {
-        const payload = {
-            amount: amt,
-            description: desc
-        };
-        const res = await insertExpenseWithOfflineSupport(supabase, payload, desc);
-        
-        // Ensure wage gets tracked in Admin Shift Wages automatically
-        if (targetUserId && navigator.onLine) {
-            const today = new Date().toISOString().split('T')[0];
-            await supabase.from('attendance_log').upsert({
-                user_id: targetUserId,
-                work_date: today,
-                wage_assigned: amt
-            }, { onConflict: 'user_id, work_date' });
-        }
-
-        const descField = document.getElementById('exp-desc');
-        if(descField) descField.value = '';
-        document.getElementById('exp-amount').value = '';
-        
-        if (res.offline) {
-            alert('No internet — expense queued locally (' + desc + ' - Ksh ' + amt + ')');
-        } else {
-            alert('Expense logged: ' + desc + ' - Ksh ' + amt);
-        }
-    } catch(err) {
-        alert('Error: ' + err.message);
-    } finally {
-        btn.disabled = false; btn.textContent = 'Log Expense';
-    }
-});
-
-// ─── QUICK RESOURCE OPENER ────────────────────────────────────────────────────
-const qresInput = document.getElementById('qres-search');
-const qresResults = document.getElementById('qres-results');
-
-qresInput.addEventListener('input', () => {
-    const term = qresInput.value.toLowerCase();
-    const matches = inventory.filter(i => !i.is_service && i.name.toLowerCase().includes(term));
-    if (!term || matches.length === 0) { qresResults.classList.add('hidden'); return; }
-    qresResults.innerHTML = matches.slice(0, 10).map(i =>
-        `<div class="p-2 text-sm cursor-pointer hover:bg-slate-50 border-b"
-              onclick="selectQRes('${i.id}', '${i.name.replace(/'/g, "\\'")}', ${i.buying_price || 0})">
-            <div class="font-bold">${i.name}</div>
-            <div class="text-xs text-gray-400">Stock: ${i.stock_quantity} | BP: Ksh ${i.buying_price || 0}</div>
-         </div>`
-    ).join('');
-    qresResults.classList.remove('hidden');
-});
-
-window.selectQRes = (id, name, bp) => {
-    document.getElementById('qres-item-id').value = id;
-    document.getElementById('qres-search').value = name;
-    
-    const children = inventory.filter(i => i.parent_id === id);
-    const piecesSidebar = document.getElementById('qres-pieces-sidebar');
-    const piecesContent = document.getElementById('qres-pieces-content');
-    
-    if (piecesSidebar && piecesContent) {
-        if (children.length > 0) {
-            piecesSidebar.classList.remove('hidden');
-            piecesContent.innerHTML = children.map(c => 
-                `<div class="bg-white p-1 rounded border mb-1 flex justify-between items-center text-xs">
-                    <span class="truncate pr-1">${c.name}</span>
-                    <span class="bg-orange-100 text-orange-800 px-1 rounded">${c.units_per_parent || 0}</span>
-                </div>`
-            ).join('');
-        } else {
-            piecesSidebar.classList.add('hidden');
-            piecesContent.innerHTML = '';
-        }
-    }
-    
-    qresResults.classList.add('hidden');
-};
-
-document.addEventListener('click', e => {
-    if (!e.target.closest('#qres-search') && !e.target.closest('#qres-results')) {
-        qresResults.classList.add('hidden');
-    }
-});
-
-document.getElementById('btn-open-resource').addEventListener('click', async () => {
-    const itemId = document.getElementById('qres-item-id').value;
-    const qty = parseInt(document.getElementById('qres-qty').value || 1);
-    const name = document.getElementById('qres-search').value;
-    if (!itemId || qty < 1) return alert('Select an item and enter quantity.');
-    
-    const selectedItem = inventory.find(i => i.id === itemId);
-    const costPerUnit = selectedItem ? selectedItem.buying_price : 0;
-    
-    const btn = document.getElementById('btn-open-resource');
-    btn.disabled = true; btn.textContent = 'Opening...';
-    try {
-        if (!navigator.onLine) {
-            throw new Error("You must be online to open a bulk resource right now.");
-        }
-
-        await supabase.from('resources')
-            .update({ status: 'exhausted' })
-            .eq('name', name)
-            .eq('status', 'active');
-
-        const { error } = await supabase.from('resources').insert([{
-            name: name,
-            units: qty,
-            cost: costPerUnit * qty,
-            status: 'active',
-            opened_at: new Date().toISOString(),
-            opened_by: currentUser.id
-        }]);
-        if (error) throw error;
-        
-        if (selectedItem) {
-            const newParentStock = selectedItem.stock_quantity - qty;
-            const { error: pErr } = await supabase.from('inventory')
-                .update({ stock_quantity: newParentStock })
-                .eq('id', itemId);
-            if (pErr) throw pErr;
-            
-            const children = inventory.filter(i => i.parent_id === itemId);
-            for (const child of children) {
-                const addQty = qty * (child.units_per_parent || 1);
-                const newChildStock = child.stock_quantity + addQty;
-                const { error: cErr } = await supabase.from('inventory')
-                    .update({ stock_quantity: newChildStock })
-                    .eq('id', child.id);
-                if (cErr) throw cErr;
-            }
-            
-            if (typeof loadInventory === 'function') {
-                await loadInventory();
-            }
-        }
-        
-        document.getElementById('qres-search').value = '';
-        document.getElementById('qres-item-id').value = '';
-        document.getElementById('qres-qty').value = 1;
-        
-        alert('Resource opened: ' + name + ' x' + qty);
-    } catch(err) {
-        alert('Error: ' + err.message);
-    } finally {
-        btn.disabled = false; btn.textContent = 'Open Resource';
-    }
-});
-
-
-// --- QTY +/- BUTTONS ---
-const qtyInput = document.getElementById('pos-qty');
-const totalInput = document.getElementById('pos-total');
-const btnMinus = document.getElementById('qty-minus');
-const btnPlus = document.getElementById('qty-plus');
-
-function updatePosTotal() {
-    const itemId = document.getElementById('pos-item-id').value;
-    if (!itemId) return;
-    const item = inventory.find(i => i.id === itemId);
-    if (!item) return;
-    let q = parseFloat(qtyInput.value) || 0;
-    if(q < 0) q = 0;
-    totalInput.value = item.selling_price * q;
-}
-
-if (btnMinus && btnPlus) {
-    btnMinus.addEventListener('click', (e) => {
-        e.preventDefault();
-        let val = parseFloat(qtyInput.value) || 0;
-        if (val > 1) { qtyInput.value = val - 1; updatePosTotal(); }
-    });
-    btnPlus.addEventListener('click', (e) => {
-        e.preventDefault();
-        let val = parseFloat(qtyInput.value) || 0;
-        qtyInput.value = val + 1; updatePosTotal();
-    });
-    qtyInput.addEventListener('input', updatePosTotal);
-}
-
-// Ensure pos-qty handles its own updates when manually typed
-
-// --- KEYBOARD SHORTCUTS ---
-const quickAmt = document.getElementById('quick-amount');
-quickAmt.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-        e.preventDefault();
-        // Update global quickPay state
-        
-        
-        window.setQuickPayUI(e.shiftKey ? 'Cash' : 'M-Pesa');
-        
-        // Trigger save
-        document.getElementById('quick-log-btn').click();
-    }
-});
-
-const mainInputs = ['pos-item-search', 'pos-qty', 'pos-total', 'pos-customer', 'kyo-pages', 'kyo-cost-pp'];
-mainInputs.forEach(id => {
-    const el = document.getElementById(id);
-    if (el) {
-        el.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-                if (isDocMode) return; // Do nothing if in Quote/Receipt mode
-                e.preventDefault();
-                if (e.shiftKey) {
-                    document.getElementById('main-pay-cash').click();
-                } else {
-                    document.getElementById('main-pay-mpesa').click();
-                }
-            }
+    if (existingIndex > -1) {
+        cart[existingIndex].qty += qtyToAdd;
+        cart[existingIndex].total = cart[existingIndex].qty * cart[existingIndex].selling_price;
+    } else {
+        cart.push({
+            id: product.id,
+            name: product.name,
+            category: product.category || 'General',
+            selling_price: parseFloat(product.selling_price || 0),
+            buying_price: parseFloat(product.buying_price || 0),
+            stock_quantity: product.stock_quantity,
+            is_service: product.is_service,
+            barcode: product.barcode,
+            qty: qtyToAdd,
+            total: qtyToAdd * parseFloat(product.selling_price || 0)
         });
     }
-});
 
-// Default focus on load
-setTimeout(() => { document.getElementById('quick-amount').focus(); }, 500);
-
-// Set focus back after logging a quick sale
-const originalQuickLogCode = "document.getElementById('quick-amount').value = ''; fetchTodaysSales();";
-const newQuickLogCode = "document.getElementById('quick-amount').value = ''; fetchTodaysSales(); setTimeout(()=>document.getElementById('quick-amount').focus(), 100);";
-
-// --- AUTO-FOCUS ON INACTIVITY ---
-let focusTimer;
-function resetFocusTimer() {
-    clearTimeout(focusTimer);
-    focusTimer = setTimeout(() => {
-        const quickAmt = document.getElementById('quick-amount');
-        if (quickAmt) quickAmt.focus();
-    }, 60 * 1000); // 1 minute
+    renderCart();
 }
-document.addEventListener('mousemove', resetFocusTimer);
-document.addEventListener('keydown', resetFocusTimer);
-document.addEventListener('click', resetFocusTimer);
-// --- OFFLINE SYNC LISTENER ---
-window.addEventListener('online', async () => {
-    console.log('[Network] Back online, syncing sales and expenses...');
-    const salesCount = await syncOfflineSales(supabase);
-    const expensesCount = await syncOfflineExpenses(supabase);
-    if (salesCount > 0) {
-        // Refresh the ledger
-        fetchTodaysSales();
+
+function updateCartQty(productId, newQty) {
+    const idx = cart.findIndex(c => c.id === productId);
+    if (idx === -1) return;
+
+    if (newQty <= 0) {
+        cart.splice(idx, 1);
+    } else {
+        cart[idx].qty = newQty;
+        cart[idx].total = cart[idx].qty * cart[idx].selling_price;
     }
-    if (expensesCount > 0) {
-        console.log(`Synced ${expensesCount} expenses.`);
+    renderCart();
+}
+
+function removeCartItem(productId) {
+    cart = cart.filter(c => c.id !== productId);
+    renderCart();
+}
+
+function clearCart() {
+    if (cart.length === 0) return;
+    if (confirm('Are you sure you want to clear the entire cart?')) {
+        cart = [];
+        renderCart();
     }
-});
-resetFocusTimer(); // Init
-
-function populateDebtSaleDropdown() {
-    const sel = document.getElementById('debt-sale-customer-select');
-    if (!sel) return;
-    const prior = sel.value;
-    sel.innerHTML = '<option value="">-- Choose Customer --</option>';
-    customers.forEach(c => {
-        const opt = document.createElement('option');
-        opt.value = c.id;
-        opt.textContent = c.name;
-        sel.appendChild(opt);
-    });
-    if (prior) sel.value = prior;
 }
 
-const mainPayDebt = document.getElementById('main-pay-debt');
-if (mainPayDebt) {
-    mainPayDebt.addEventListener('click', async () => {
-        if (!navigator.onLine) {
-            alert('Debt Sales require an active internet connection.');
-            return;
-        }
-        
-        const custId = document.getElementById('debt-sale-customer-select').value;
-        if (!custId) {
-            alert('Please select a customer for the debt sale.');
-            return;
-        }
+document.getElementById('btn-clear-cart')?.addEventListener('click', clearCart);
 
-        const amt = parseFloat(document.getElementById('pos-total').value);
-        const qty = parseInt(document.getElementById('pos-qty').value || 1);
-        const itemId = document.getElementById('pos-item-id').value;
-        const item = inventory.find(i => i.id === itemId);
-        
-        if(!item || !amt) return alert('Select an item and enter amount');
+function renderCart() {
+    const tbody = document.getElementById('cart-tbody');
+    const badge = document.getElementById('cart-item-count-badge');
+    const subtotalEl = document.getElementById('lbl-subtotal');
+    const grandTotalEl = document.getElementById('lbl-grand-total');
+    const discountInput = document.getElementById('cart-discount');
+    const discountValEl = document.getElementById('lbl-discount-val');
 
-        const cust = customers.find(c => c.id == custId);
-        if (!cust) return;
+    let totalItems = 0;
+    let subtotal = 0;
 
-        if (!confirm('Log Ksh ' + amt + ' as Debt for ' + cust.name + '?')) return;
-
-        mainPayDebt.disabled = true;
-        mainPayDebt.textContent = 'Processing...';
-
-        try {
-            let bc = item.buying_price || 0, kyo = 0;
-            if(!document.getElementById('kyocera-fields').classList.contains('hidden')) { 
-                kyo = parseInt(document.getElementById('kyo-pages').value); 
-                bc = kyo * parseFloat(document.getElementById('kyo-cost-pp').value); 
-            }
-            if(item.name.toLowerCase().includes('binding') && !item.is_kyocera) {
-                bc = await calculateBindingCost(qty);
-            }
-            const prof = amt - bc;
-
-            const { error: insertErr } = await supabase.from('sales_log').insert([{
-                item_id: item.id,
-                total_charged: amt,
-                calculated_qty: qty,
-                calculated_profit: prof,
-                cashier_id: currentUser.id,
-                payment_method: 'cash',
-                status: 'debt',
-                customer_id: custId
-            }]);
-            if (insertErr) throw insertErr;
-
-            // Update customer debt
-            const newDebt = parseFloat(cust.outstanding_debt || 0) + amt;
-            const { error: custErr } = await supabase.from('customers').update({ outstanding_debt: newDebt }).eq('id', custId);
-            if (custErr) throw custErr;
-            
-            cust.outstanding_debt = newDebt;
-            localStorage.setItem('litaj_customers_cache', JSON.stringify(customers));
-            populateCustomerDropdown();
-            populateDebtDropdown();
-            populateDebtSaleDropdown();
-
-            // Deduct inventory
-            if (item.type === 'variable' && item.is_service && !item.is_kyocera) {
-                if (item.name.toLowerCase().includes('binding')) await deductBindingMaterials(qty);
-            } else if (item.type === 'fixed') {
-                const newStock = (item.stock_quantity || 0) - qty;
-                /* await supabase.from('inventory').update({ stock_quantity: newStock }).eq('id', item.id); - Handled by Postgres Trigger */
-                item.stock_quantity = newStock;
-            }
-
-            document.getElementById('pos-item-id').value = '';
-            document.getElementById('pos-item-search').value = '';
-            document.getElementById('pos-qty').value = '';
-            document.getElementById('pos-total').value = '';
-            document.getElementById('kyocera-fields').classList.add('hidden');
-            
-            fetchTodaysSales();
-            resetModes();
-            document.getElementById('debt-sale-customer-select').value = '';
-        } catch (err) {
-            alert('Error processing debt sale: ' + err.message);
-        } finally {
-            mainPayDebt.disabled = false;
-            mainPayDebt.textContent = 'Debt';
-        }
+    cart.forEach(item => {
+        totalItems += item.qty;
+        subtotal += item.total;
     });
-}
-// NEW DEBT CHECKOUT LOGIC
 
-const btnDebtCart = document.getElementById('btn-debt-cart');
-if (btnDebtCart) {
-    btnDebtCart.addEventListener('click', async () => {
-        if (!navigator.onLine) {
-            alert('Debt Sales require an active internet connection.');
-            return;
-        }
-        
-        const custId = document.getElementById('debt-sale-customer-select').value;
-        if (!custId) {
-            alert('Please select a customer for the debt sale.');
-            return;
-        }
+    const discount = parseFloat(discountInput?.value || 0) || 0;
+    const grandTotal = Math.max(0, subtotal - discount);
 
-        if (docCart.length === 0) {
-            alert('Cart is empty.');
-            return;
-        }
+    if (badge) badge.textContent = `${totalItems} item${totalItems === 1 ? '' : 's'}`;
+    if (subtotalEl) subtotalEl.textContent = `KSh ${subtotal.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+    if (discountValEl) discountValEl.textContent = `- KSh ${discount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+    if (grandTotalEl) grandTotalEl.textContent = `KSh ${grandTotal.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
 
-        const totalAmount = docCart.reduce((sum, item) => sum + item.total, 0);
-        const cust = customers.find(c => c.id == custId);
-        if (!cust) return;
+    if (cart.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="5" class="py-16 text-center text-slate-400 font-medium">
+                    <div class="text-4xl mb-2">🛒</div>
+                    <div class="font-bold text-slate-600">Cart is empty</div>
+                    <div class="text-xs mt-1">Select products on the left or scan barcode</div>
+                </td>
+            </tr>`;
+        return;
+    }
 
-        if (!confirm('Log Ksh ' + totalAmount + ' as Debt for ' + cust.name + '?')) return;
-
-        btnDebtCart.disabled = true;
-        btnDebtCart.textContent = 'Processing...';
-
-        try {
-            const inserts = docCart.map(item => ({
-                item_id: item.id,
-                total_charged: item.total,
-                calculated_qty: item.qty,
-                calculated_profit: item.total - (item.buying_price * item.qty),
-                cashier_id: currentUser.id,
-                payment_method: 'cash',
-                status: 'debt',
-                customer_id: custId,
-                kyocera_pages: item.kyocera_pages
-            }));
-
-            const { error: insertErr } = await supabase.from('sales_log').insert(inserts);
-            if (insertErr) throw insertErr;
-
-            // Update customer debt
-            const newDebt = parseFloat(cust.outstanding_debt || 0) + totalAmount;
-            const { error: custErr } = await supabase.from('customers').update({ outstanding_debt: newDebt }).eq('id', custId);
-            if (custErr) throw custErr;
-            
-            cust.outstanding_debt = newDebt;
-            localStorage.setItem('litaj_customers_cache', JSON.stringify(customers));
-            populateCustomerDropdown();
-            populateDebtDropdown();
-            populateDebtSaleDropdown();
-
-            // Deduct inventory
-            for (let item of docCart) {
-                if (item.type === 'variable' && item.is_service && !item.is_kyocera) {
-                    if (item.name.toLowerCase().includes('binding')) await deductBindingMaterials(item.qty);
-                    continue;
-                }
-                const logItem = inventory.find(i => i.id === item.id);
-                if (logItem && logItem.type === 'fixed') {
-                    const newStock = (logItem.stock_quantity || 0) - item.qty;
-                    /* await supabase.from('inventory').update({ stock_quantity: newStock }).eq('id', item.id); - Handled by Postgres Trigger */
-                    logItem.stock_quantity = newStock;
-                }
-            }
-
-            docCart = [];
-            renderDocCart();
-            fetchTodaysSales();
-            resetModes();
-            document.getElementById('debt-sale-customer-select').value = '';
-        } catch (err) {
-            alert('Error processing debt sale: ' + err.message);
-        } finally {
-            btnDebtCart.disabled = false;
-            btnDebtCart.textContent = 'Process Debt';
-        }
-    });
-}
-
-// --- TIERED PRODUCT DRAWER LOGIC ---
-const drawerOverlay = document.getElementById('drawer-overlay');
-const quickAddDrawer = document.getElementById('quick-add-drawer');
-
-document.getElementById('btn-open-drawer').addEventListener('click', () => {
-    drawerOverlay.classList.remove('hidden');
-    // slight delay to allow display block to apply before transform
-    setTimeout(() => {
-        quickAddDrawer.classList.remove('translate-x-full');
-    }, 10);
-});
-
-document.getElementById('btn-close-drawer').addEventListener('click', () => {
-    quickAddDrawer.classList.add('translate-x-full');
-    setTimeout(() => {
-        drawerOverlay.classList.add('hidden');
-    }, 300);
-});
-
-drawerOverlay.addEventListener('click', () => {
-    document.getElementById('btn-close-drawer').click();
-});
-
-// Search and Drag Logic for Drawer
-const drawerSearch = document.getElementById('drawer-search-products');
-const drawerList = document.getElementById('drawer-products-list');
-let drawerDraggedItem = null;
-
-function renderDrawerProducts() {
-    const term = drawerSearch.value.toLowerCase();
-    const matches = inventory.filter(i => i.name.toLowerCase().includes(term));
-    drawerList.innerHTML = matches.slice(0, 15).map(i => `
-        <div class="p-2 bg-white border border-slate-200 rounded cursor-grab hover:border-orange-400 shadow-sm flex justify-between items-center text-xs" 
-             draggable="true" ondragstart="drawerDragStart(event, '${i.id}')">
-            <div>
-                <div class="font-bold text-slate-800">${i.name}</div>
-                <div class="text-slate-500">Ksh ${i.selling_price || 0}</div>
-            </div>
-        </div>
+    tbody.innerHTML = cart.map(item => `
+        <tr class="hover:bg-slate-50 border-b border-slate-100">
+            <td class="py-2.5 px-2">
+                <div class="font-bold text-slate-800 text-xs leading-tight">${item.name}</div>
+                <div class="text-[10px] text-slate-400 font-medium">${item.category}</div>
+            </td>
+            <td class="py-2.5 px-2 text-center">
+                <div class="flex items-center justify-center gap-1">
+                    <button class="cart-qty-minus w-6 h-6 rounded bg-slate-200 hover:bg-slate-300 font-bold text-xs flex items-center justify-center transition" data-id="${item.id}">-</button>
+                    <input type="number" min="1" value="${item.qty}" class="cart-qty-input w-11 h-6 text-center border border-slate-300 rounded font-bold text-xs focus:ring-1 focus:ring-orange-500" data-id="${item.id}">
+                    <button class="cart-qty-plus w-6 h-6 rounded bg-slate-200 hover:bg-slate-300 font-bold text-xs flex items-center justify-center transition" data-id="${item.id}">+</button>
+                </div>
+            </td>
+            <td class="py-2.5 px-2 text-right text-xs font-semibold text-slate-600">
+                ${item.selling_price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+            </td>
+            <td class="py-2.5 px-2 text-right text-xs font-black text-slate-900">
+                ${item.total.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+            </td>
+            <td class="py-2.5 px-1 text-center">
+                <button class="cart-del-btn text-slate-400 hover:text-red-600 font-black text-base px-1 leading-none transition" data-id="${item.id}">&times;</button>
+            </td>
+        </tr>
     `).join('');
-}
 
-window.drawerDragStart = (e, id) => {
-    drawerDraggedItem = inventory.find(i => i.id === id);
-    e.dataTransfer.setData('text/plain', id);
-};
+    // Attach Cart Action Listeners
+    tbody.querySelectorAll('.cart-qty-minus').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const id = btn.dataset.id;
+            const itm = cart.find(c => c.id === id);
+            if (itm) updateCartQty(id, itm.qty - 1);
+        });
+    });
 
-drawerSearch.addEventListener('input', renderDrawerProducts);
-// Render once when opened
-document.getElementById('btn-open-drawer').addEventListener('click', renderDrawerProducts);
+    tbody.querySelectorAll('.cart-qty-plus').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const id = btn.dataset.id;
+            const itm = cart.find(c => c.id === id);
+            if (itm) updateCartQty(id, itm.qty + 1);
+        });
+    });
 
-let drawerLinkedTiers = { 1: null, 2: null, 3: null };
+    tbody.querySelectorAll('.cart-qty-input').forEach(input => {
+        input.addEventListener('change', () => {
+            const id = input.dataset.id;
+            const val = parseInt(input.value) || 1;
+            updateCartQty(id, Math.max(1, val));
+        });
+    });
 
-function setupDrawerDropzone(tierNum) {
-    const section = document.getElementById('dqa-section-' + tierNum);
-    section.addEventListener('dragover', e => { e.preventDefault(); section.classList.add('bg-orange-100', 'border-orange-400'); });
-    section.addEventListener('dragleave', e => { section.classList.remove('bg-orange-100', 'border-orange-400'); });
-    section.addEventListener('drop', e => {
-        e.preventDefault();
-        section.classList.remove('bg-orange-100', 'border-orange-400');
-        if (!drawerDraggedItem) return;
-
-        drawerLinkedTiers[tierNum] = drawerDraggedItem;
-        
-        document.getElementById('dqa-t' + tierNum + '-name').value = drawerDraggedItem.name;
-        document.getElementById('dqa-t' + tierNum + '-cp').value = drawerDraggedItem.buying_price || 0;
-        document.getElementById('dqa-t' + tierNum + '-sp').value = drawerDraggedItem.selling_price || 0;
-        document.getElementById('dqa-t' + tierNum + '-stock').value = drawerDraggedItem.stock_quantity || 0;
-        
-        document.getElementById('dqa-linked-badge-' + tierNum).classList.remove('hidden');
-        
-        if (tierNum === 2) {
-            document.getElementById('dqa-t2-en').checked = true;
-            document.getElementById('dqa-t2-en').dispatchEvent(new Event('change'));
-        }
-        if (tierNum === 3) {
-            document.getElementById('dqa-t3-en').checked = true;
-            document.getElementById('dqa-t3-en').dispatchEvent(new Event('change'));
-        }
+    tbody.querySelectorAll('.cart-del-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            removeCartItem(btn.dataset.id);
+        });
     });
 }
 
-setupDrawerDropzone(1);
-setupDrawerDropzone(2);
-setupDrawerDropzone(3);
+document.getElementById('cart-discount')?.addEventListener('input', renderCart);
 
-document.getElementById('btn-drawer-quick-add').addEventListener('click', async () => {
-    const t1Name = document.getElementById('dqa-t1-name').value;
-    if (!t1Name) { alert("Tier 1 Name is required."); return; }
-
-    const type = document.getElementById('dqa-type').value;
-    const isService = document.getElementById('dqa-svc').checked;
-    const btn = document.getElementById('btn-drawer-quick-add');
-    btn.innerHTML = 'Saving...'; btn.disabled = true;
-
-    const tiers = [];
+// ====================================================================
+// 3. CART HOLD & RECALL (Vegas POS Feature)
+// ====================================================================
+document.getElementById('btn-hold-cart')?.addEventListener('click', () => {
+    if (cart.length === 0) return alert('Cart is empty.');
     
-    if (document.getElementById('dqa-t3-en').checked) {
-        tiers.push({
-            level: 3, name: document.getElementById('dqa-t3-name').value,
-            type, is_service: isService, tier_level: 3,
-            buying_price: parseFloat(document.getElementById('dqa-t3-cp').value||0),
-            selling_price: parseFloat(document.getElementById('dqa-t3-sp').value||0),
-            stock_quantity: parseInt(document.getElementById('dqa-t3-stock').value||0),
-            units_per_parent: 1, _my_units: parseInt(document.getElementById('dqa-t3-units').value||1),
-            _linked_product: drawerLinkedTiers[3]
+    const held = JSON.parse(localStorage.getItem('litaj_held_carts') || '[]');
+    const heldCart = {
+        id: Date.now().toString(),
+        timestamp: new Date().toLocaleString(),
+        cashier: currentUser ? currentUser.username : 'staff',
+        items: [...cart]
+    };
+    held.push(heldCart);
+    localStorage.setItem('litaj_held_carts', JSON.stringify(held));
+    cart = [];
+    renderCart();
+    alert('Cart placed on HOLD.');
+});
+
+document.getElementById('btn-recall-cart')?.addEventListener('click', () => {
+    const held = JSON.parse(localStorage.getItem('litaj_held_carts') || '[]');
+    const modal = document.getElementById('modal-held-carts');
+    const container = document.getElementById('held-carts-list');
+
+    if (held.length === 0) {
+        container.innerHTML = '<div class="text-xs text-slate-400 text-center py-6">No held carts currently saved</div>';
+    } else {
+        container.innerHTML = held.map(h => {
+            const sum = h.items.reduce((acc, i) => acc + i.total, 0);
+            return `
+                <div class="p-3 bg-slate-50 border border-slate-200 rounded-xl flex justify-between items-center hover:bg-orange-50 transition">
+                    <div>
+                        <div class="text-xs font-bold text-slate-800">${h.timestamp} (${h.cashier})</div>
+                        <div class="text-[11px] text-slate-500">${h.items.length} items • Total: KSh ${sum.toFixed(2)}</div>
+                    </div>
+                    <div class="flex gap-1.5">
+                        <button class="btn-restore-held px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white font-bold rounded-lg text-xs" data-id="${h.id}">Restore</button>
+                        <button class="btn-discard-held px-2 py-1.5 bg-red-100 hover:bg-red-200 text-red-600 font-bold rounded-lg text-xs" data-id="${h.id}">&times;</button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        container.querySelectorAll('.btn-restore-held').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const id = btn.dataset.id;
+                const found = held.find(h => h.id === id);
+                if (found) {
+                    if (cart.length > 0 && !confirm('Overwriting current active cart. Proceed?')) return;
+                    cart = found.items;
+                    renderCart();
+                    const filtered = held.filter(h => h.id !== id);
+                    localStorage.setItem('litaj_held_carts', JSON.stringify(filtered));
+                    modal.classList.add('hidden');
+                }
+            });
+        });
+
+        container.querySelectorAll('.btn-discard-held').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const id = btn.dataset.id;
+                const filtered = held.filter(h => h.id !== id);
+                localStorage.setItem('litaj_held_carts', JSON.stringify(filtered));
+                document.getElementById('btn-recall-cart').click();
+            });
         });
     }
-    if (document.getElementById('dqa-t2-en').checked) {
-        tiers.push({
-            level: 2, name: document.getElementById('dqa-t2-name').value,
-            type, is_service: isService, tier_level: 2,
-            buying_price: parseFloat(document.getElementById('dqa-t2-cp').value||0),
-            selling_price: parseFloat(document.getElementById('dqa-t2-sp').value||0),
-            stock_quantity: parseInt(document.getElementById('dqa-t2-stock').value||0),
-            _my_units: parseInt(document.getElementById('dqa-t2-units').value||1),
-            _linked_product: drawerLinkedTiers[2]
-        });
+
+    modal.classList.remove('hidden');
+});
+
+// ====================================================================
+// 4. VEGAS CHECKOUT MODAL & PAYMENT WORKFLOW
+// ====================================================================
+const checkoutModal = document.getElementById('modal-checkout');
+const btnOpenCheckout = document.getElementById('btn-open-checkout');
+const btnCloseCheckout = document.getElementById('btn-close-checkout');
+const btnCancelCheckout = document.getElementById('btn-cancel-checkout');
+const btnSubmitFinalSale = document.getElementById('btn-submit-final-sale');
+
+btnOpenCheckout?.addEventListener('click', openCheckout);
+btnCloseCheckout?.addEventListener('click', () => checkoutModal.classList.add('hidden'));
+btnCancelCheckout?.addEventListener('click', () => checkoutModal.classList.add('hidden'));
+
+function getCartGrandTotal() {
+    const subtotal = cart.reduce((acc, i) => acc + i.total, 0);
+    const discount = parseFloat(document.getElementById('cart-discount')?.value || 0) || 0;
+    return Math.max(0, subtotal - discount);
+}
+
+function openCheckout() {
+    if (cart.length === 0) return alert('Your cart is empty. Please add items before checking out.');
+
+    const grandTotal = getCartGrandTotal();
+    const totalDueEl = document.getElementById('checkout-total-due');
+    if (totalDueEl) totalDueEl.textContent = `KSh ${grandTotal.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+
+    // Reset payment method to Cash
+    selectPaymentMethod('Cash');
+
+    // Auto-fill cash tendered with grand total
+    const cashInput = document.getElementById('cash-tendered-input');
+    if (cashInput) {
+        cashInput.value = grandTotal;
+        calculateCashChange();
     }
-    tiers.push({
-        level: 1, name: t1Name,
-        type, is_service: isService, tier_level: 1,
-        buying_price: parseFloat(document.getElementById('dqa-t1-cp').value||0),
-        selling_price: parseFloat(document.getElementById('dqa-t1-sp').value||0),
-        stock_quantity: parseInt(document.getElementById('dqa-t1-stock').value||0),
-        _linked_product: drawerLinkedTiers[1]
+
+    // Load customers for debt dropdown
+    loadCustomersDropdown();
+
+    document.getElementById('checkout-error-msg')?.classList.add('hidden');
+    checkoutModal.classList.remove('hidden');
+
+    setTimeout(() => {
+        cashInput?.select();
+        cashInput?.focus();
+    }, 100);
+}
+
+// Payment Method Selection Tabs
+document.querySelectorAll('.pay-method-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        selectPaymentMethod(btn.dataset.method);
+    });
+});
+
+function selectPaymentMethod(method) {
+    activePaymentMethod = method;
+
+    // Toggle button active states
+    document.querySelectorAll('.pay-method-btn').forEach(btn => {
+        if (btn.dataset.method === method) {
+            btn.className = "pay-method-btn active py-3 px-3 rounded-xl border-2 border-orange-600 bg-orange-50 text-orange-700 font-bold text-sm transition flex flex-col items-center gap-1 shadow-sm";
+        } else {
+            btn.className = "pay-method-btn py-3 px-3 rounded-xl border-2 border-slate-200 bg-white text-slate-600 font-bold text-sm hover:border-slate-300 transition flex flex-col items-center gap-1";
+        }
     });
 
-    let lastParentId = null;
-    try {
-        for (let i = 0; i < tiers.length; i++) {
-            const t = tiers[i];
-            const payload = {
-                name: t.name, type: t.type, is_service: t.is_service,
-                tier_level: t.tier_level, buying_price: t.buying_price,
-                selling_price: t.selling_price, stock_quantity: t.stock_quantity,
-                parent_id: lastParentId
-            };
-            if (i > 0) payload.units_per_parent = tiers[i-1]._my_units || 1;
-            else payload.units_per_parent = 1;
+    // Toggle panel visibility
+    document.querySelectorAll('.pay-panel').forEach(p => p.classList.add('hidden'));
 
-            if (t._linked_product) {
-                const { error } = await supabase.from('inventory').update({
-                    parent_id: payload.parent_id,
-                    units_per_parent: payload.units_per_parent,
-                    name: payload.name,
-                    buying_price: payload.buying_price,
-                    selling_price: payload.selling_price,
-                    stock_quantity: payload.stock_quantity
-                }).eq('id', t._linked_product.id);
-                if (error) throw new Error("Error linking tier " + t.level + ": " + error.message);
-                lastParentId = t._linked_product.id;
-                
-                // Update local cache
-                const idx = inventory.findIndex(inv => inv.id === t._linked_product.id);
-                if(idx >= 0) inventory[idx] = { ...inventory[idx], ...payload };
-            } else {
-                const { data, error } = await supabase.from('inventory').insert([payload]).select().single();
-                if (error) throw new Error("Error saving tier " + t.level + ": " + error.message);
-                lastParentId = data.id;
-                inventory.push(data);
-            }
+    if (method === 'Cash') {
+        document.getElementById('checkout-panel-cash')?.classList.remove('hidden');
+        document.getElementById('cash-tendered-input')?.focus();
+    } else if (method === 'M-Pesa') {
+        document.getElementById('checkout-panel-mpesa')?.classList.remove('hidden');
+        document.getElementById('mpesa-code-input')?.focus();
+    } else if (method === 'Split') {
+        document.getElementById('checkout-panel-split')?.classList.remove('hidden');
+        const grandTotal = getCartGrandTotal();
+        const splitCash = document.getElementById('split-cash-input');
+        const splitMpesa = document.getElementById('split-mpesa-input');
+        if (splitCash && splitMpesa) {
+            splitCash.value = Math.floor(grandTotal / 2);
+            splitMpesa.value = grandTotal - parseFloat(splitCash.value);
+            calculateSplitBalance();
+        }
+    } else if (method === 'Debt') {
+        document.getElementById('checkout-panel-debt')?.classList.remove('hidden');
+    }
+}
+
+// Cash Change Calculation & Denomination Chips
+const cashTenderedInput = document.getElementById('cash-tendered-input');
+cashTenderedInput?.addEventListener('input', calculateCashChange);
+
+function calculateCashChange() {
+    const grandTotal = getCartGrandTotal();
+    const tendered = parseFloat(cashTenderedInput?.value || 0) || 0;
+    const change = tendered - grandTotal;
+    const changeLabel = document.getElementById('cash-change-label');
+
+    if (!changeLabel) return;
+
+    if (change >= 0) {
+        changeLabel.textContent = `KSh ${change.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+        changeLabel.className = "text-2xl font-black text-emerald-600 mt-0.5";
+    } else {
+        const remaining = Math.abs(change);
+        changeLabel.textContent = `Deficit: -KSh ${remaining.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+        changeLabel.className = "text-2xl font-black text-red-600 mt-0.5";
+    }
+}
+
+document.querySelectorAll('.denom-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+        const val = chip.dataset.val;
+        const grandTotal = getCartGrandTotal();
+        if (val === 'exact') {
+            cashTenderedInput.value = grandTotal;
+        } else {
+            const add = parseFloat(val) || 0;
+            cashTenderedInput.value = (parseFloat(cashTenderedInput.value || 0) || 0) + add;
+        }
+        calculateCashChange();
+        cashTenderedInput.focus();
+    });
+});
+
+// Split Calculations
+const splitCashInput = document.getElementById('split-cash-input');
+const splitMpesaInput = document.getElementById('split-mpesa-input');
+splitCashInput?.addEventListener('input', calculateSplitBalance);
+splitMpesaInput?.addEventListener('input', calculateSplitBalance);
+
+function calculateSplitBalance() {
+    const grandTotal = getCartGrandTotal();
+    const c = parseFloat(splitCashInput?.value || 0) || 0;
+    const m = parseFloat(splitMpesaInput?.value || 0) || 0;
+    const totalPaid = c + m;
+    const diff = grandTotal - totalPaid;
+    const remLabel = document.getElementById('split-remaining-label');
+
+    if (!remLabel) return;
+
+    if (diff === 0) {
+        remLabel.textContent = 'Exact Amount (Balanced)';
+        remLabel.className = 'text-lg font-black text-emerald-600';
+    } else if (diff < 0) {
+        remLabel.textContent = `Change: KSh ${Math.abs(diff).toFixed(2)}`;
+        remLabel.className = 'text-lg font-black text-emerald-600';
+    } else {
+        remLabel.textContent = `Still Due: KSh ${diff.toFixed(2)}`;
+        remLabel.className = 'text-lg font-black text-red-600';
+    }
+}
+
+// Customers in Debt Mode
+async function loadCustomersDropdown() {
+    try {
+        if (navigator.onLine) {
+            const { data } = await supabase.from('customers').select('*').order('name');
+            customers = data || [];
+        }
+    } catch(e) {
+        console.warn('Could not load customers:', e.message);
+    }
+
+    const select = document.getElementById('debt-customer-dropdown');
+    const collectSelect = document.getElementById('collect-debt-cust-select');
+
+    const options = customers.map(c => 
+        `<option value="${c.id}" data-debt="${c.outstanding_debt || 0}">${c.name} (${c.phone || 'No phone'}) - Debt: KSh ${parseFloat(c.outstanding_debt || 0).toFixed(2)}</option>`
+    ).join('');
+
+    if (select) {
+        select.innerHTML = '<option value="">-- Choose Customer --</option>' + options;
+    }
+    if (collectSelect) {
+        collectSelect.innerHTML = '<option value="">-- Choose Customer --</option>' + options;
+    }
+}
+
+document.getElementById('debt-customer-dropdown')?.addEventListener('change', (e) => {
+    const sel = e.target;
+    const info = document.getElementById('debt-customer-info');
+    const bal = document.getElementById('debt-customer-bal');
+    const opt = sel.options[sel.selectedIndex];
+
+    if (opt && opt.value) {
+        const debt = parseFloat(opt.dataset.debt || 0);
+        bal.textContent = `KSh ${debt.toFixed(2)}`;
+        info.classList.remove('hidden');
+    } else {
+        info.classList.add('hidden');
+    }
+});
+
+// Quick Add Customer Inline
+document.getElementById('btn-quick-add-customer')?.addEventListener('click', () => {
+    document.getElementById('modal-quick-customer')?.classList.remove('hidden');
+    document.getElementById('new-cust-name')?.focus();
+});
+
+document.getElementById('btn-save-quick-cust')?.addEventListener('click', async () => {
+    const name = document.getElementById('new-cust-name').value.trim();
+    const phone = document.getElementById('new-cust-phone').value.trim();
+
+    if (!name) return alert('Customer name is required');
+
+    try {
+        const { data, error } = await supabase.from('customers').insert([{ name, phone, outstanding_debt: 0 }]).select().single();
+        if (error) throw error;
+        customers.push(data);
+        await loadCustomersDropdown();
+        document.getElementById('debt-customer-dropdown').value = data.id;
+        document.getElementById('debt-customer-dropdown').dispatchEvent(new Event('change'));
+        document.getElementById('modal-quick-customer').classList.add('hidden');
+        document.getElementById('new-cust-name').value = '';
+        document.getElementById('new-cust-phone').value = '';
+    } catch (err) {
+        alert('Failed to save customer: ' + err.message);
+    }
+});
+
+// ====================================================================
+// 5. SUBMIT FINAL SALE & RECEIPT GENERATION
+// ====================================================================
+btnSubmitFinalSale?.addEventListener('click', processFinalSale);
+
+async function processFinalSale() {
+    const errBox = document.getElementById('checkout-error-msg');
+    errBox.classList.add('hidden');
+
+    const grandTotal = getCartGrandTotal();
+    const generateReceipt = document.getElementById('chk-generate-receipt')?.checked;
+
+    let customerId = null;
+    let paymentRef = '';
+    let tenderAmt = 0;
+    let changeAmt = 0;
+
+    // Validate Payment Specifics
+    if (activePaymentMethod === 'Cash') {
+        tenderAmt = parseFloat(cashTenderedInput.value || 0) || 0;
+        if (tenderAmt < grandTotal) {
+            errBox.textContent = `Insufficient cash entered. Due: KSh ${grandTotal.toFixed(2)}, Tendered: KSh ${tenderAmt.toFixed(2)}`;
+            errBox.classList.remove('hidden');
+            return;
+        }
+        changeAmt = tenderAmt - grandTotal;
+    } else if (activePaymentMethod === 'M-Pesa') {
+        paymentRef = document.getElementById('mpesa-code-input').value.trim();
+        tenderAmt = grandTotal;
+    } else if (activePaymentMethod === 'Split') {
+        const c = parseFloat(splitCashInput.value || 0) || 0;
+        const m = parseFloat(splitMpesaInput.value || 0) || 0;
+        if (c + m < grandTotal) {
+            errBox.textContent = `Split payment total (KSh ${(c+m).toFixed(2)}) is less than Grand Total Due (KSh ${grandTotal.toFixed(2)})`;
+            errBox.classList.remove('hidden');
+            return;
+        }
+        paymentRef = `Cash: ${c} | M-Pesa: ${m} (${document.getElementById('split-mpesa-ref').value.trim()})`;
+        tenderAmt = c + m;
+        changeAmt = (c + m) - grandTotal;
+    } else if (activePaymentMethod === 'Debt') {
+        customerId = document.getElementById('debt-customer-dropdown').value;
+        if (!customerId) {
+            errBox.textContent = 'Please select a registered customer for credit account sales.';
+            errBox.classList.remove('hidden');
+            return;
+        }
+        tenderAmt = 0;
+    }
+
+    btnSubmitFinalSale.disabled = true;
+    btnSubmitFinalSale.innerHTML = 'Processing...';
+
+    // Generate shared receipt number for all items in this cart sale
+    const receiptNo = `LH-${new Date().toISOString().slice(2, 10).replace(/-/g, '')}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+    try {
+        // Construct sale log rows for each cart item
+        const now = new Date().toISOString();
+        const salesRows = cart.map(item => ({
+            item_id: item.id,
+            receipt_no: receiptNo,
+            calculated_qty: item.qty,
+            total_charged: item.total,
+            calculated_profit: (item.selling_price - item.buying_price) * item.qty,
+            buying_price_at_sale: item.buying_price,
+            cashier_id: currentUser ? currentUser.id : null,
+            customer_id: customerId,
+            payment_method: activePaymentMethod,
+            amount_tendered: tenderAmt,
+            change_given: changeAmt,
+            notes: paymentRef || null,
+            status: activePaymentMethod === 'Debt' ? 'debt' : 'active',
+            timestamp: now
+        }));
+
+        // Insert sale rows (with offline queue fallback if needed)
+        for (const row of salesRows) {
+            await insertSaleWithOfflineSupport(supabase, row);
         }
 
-        // Reset form
-        document.querySelectorAll('#drawer-quick-add-form input[type="text"]').forEach(el => el.value = '');
-        document.querySelectorAll('#drawer-quick-add-form input[type="number"]').forEach(el => el.value = '0');
-        document.querySelectorAll('#drawer-quick-add-form input[type="checkbox"]').forEach(el => { el.checked = false; el.dispatchEvent(new Event('change')); });
-        document.getElementById('dqa-t2-units').value = '1';
-        document.getElementById('dqa-t3-units').value = '1';
-        
-        drawerLinkedTiers = { 1: null, 2: null, 3: null };
-        document.getElementById('dqa-linked-badge-1').classList.add('hidden');
-        document.getElementById('dqa-linked-badge-2').classList.add('hidden');
-        document.getElementById('dqa-linked-badge-3').classList.add('hidden');
+        // If debt sale, update customer's outstanding balance
+        if (activePaymentMethod === 'Debt' && customerId) {
+            const cust = customers.find(c => c.id === customerId);
+            const newBal = (parseFloat(cust?.outstanding_debt || 0)) + grandTotal;
+            await supabase.from('customers').update({ outstanding_debt: newBal }).eq('id', customerId);
+        }
 
-        alert('Products created/linked successfully!');
-        
-        // Re-render UI pieces dependent on inventory
-        inventory.sort((a,b) => a.name.localeCompare(b.name));
-        renderQuickAddButtons();
-        
-        // Close drawer
-        document.getElementById('btn-close-drawer').click();
+        // Generate PDF Receipt ONLY if checkbox is checked
+        if (generateReceipt) {
+            generateReceiptPDF(receiptNo, cart, grandTotal, activePaymentMethod, tenderAmt, changeAmt, customerId);
+        }
+
+        // Reset cart and checkout modal
+        const completedCart = [...cart];
+        cart = [];
+        renderCart();
+        checkoutModal.classList.add('hidden');
+
+        // Refresh live inventory & today's sales
+        await loadInventory();
+        await loadTodaysSales();
+
+        // Flash toast notification
+        showToast(`Sale recorded successfully! Ref: ${receiptNo}`);
 
     } catch (err) {
-        alert(err.message);
+        console.error('Checkout error:', err);
+        errBox.textContent = 'Failed to process sale: ' + err.message;
+        errBox.classList.remove('hidden');
     } finally {
-        btn.innerHTML = 'Save Product'; btn.disabled = false;
+        btnSubmitFinalSale.disabled = false;
+        btnSubmitFinalSale.innerHTML = '✓ COMPLETE SALE (Enter)';
+    }
+}
+
+function showToast(msg) {
+    const toast = document.createElement('div');
+    toast.className = "fixed bottom-5 right-5 z-[100] bg-slate-900 text-white px-5 py-3 rounded-2xl shadow-2xl border border-slate-700 flex items-center gap-2 text-sm font-bold animate-bounce";
+    toast.innerHTML = `<span>✅</span> <span>${msg}</span>`;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 4000);
+}
+
+// ====================================================================
+// 6. RECEIPT GENERATION (PDF - Conditional On Checkbox)
+// ====================================================================
+function generateReceiptPDF(receiptNo, items, grandTotal, method, tendered, change, customerId) {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: [80, 200] // Standard 80mm thermal receipt roll layout
+    });
+
+    const cust = customers.find(c => c.id === customerId);
+
+    // Header
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(14);
+    doc.text("LITAJ HARDWARE", 40, 10, { align: "center" });
+
+    doc.setFontSize(8);
+    doc.setFont("helvetica", "normal");
+    doc.text("Building & Construction Materials", 40, 14, { align: "center" });
+    doc.text("Tel: +254 700 000 000", 40, 18, { align: "center" });
+    doc.text("--------------------------------------------------", 40, 22, { align: "center" });
+
+    doc.text(`Receipt: ${receiptNo}`, 4, 27);
+    doc.text(`Date: ${new Date().toLocaleString()}`, 4, 31);
+    doc.text(`Cashier: ${currentUser ? currentUser.username : 'Staff'}`, 4, 35);
+    if (cust) {
+        doc.text(`Customer: ${cust.name}`, 4, 39);
+    }
+
+    doc.text("--------------------------------------------------", 40, 43, { align: "center" });
+
+    // Table of items
+    const tableData = items.map(i => [
+        i.name,
+        i.qty.toString(),
+        i.selling_price.toFixed(0),
+        i.total.toFixed(0)
+    ]);
+
+    doc.autoTable({
+        startY: 45,
+        head: [['Item', 'Qty', 'Price', 'Total']],
+        body: tableData,
+        theme: 'plain',
+        styles: { fontSize: 7, cellPadding: 1 },
+        headStyles: { fontStyle: 'bold' },
+        columnStyles: {
+            0: { cellWidth: 35 },
+            1: { cellWidth: 8, halign: 'center' },
+            2: { cellWidth: 14, halign: 'right' },
+            3: { cellWidth: 15, halign: 'right' }
+        },
+        margin: { left: 4, right: 4 }
+    });
+
+    const finalY = doc.lastAutoTable.finalY + 3;
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.text(`TOTAL: KSh ${grandTotal.toLocaleString()}`, 76, finalY + 4, { align: "right" });
+
+    doc.setFontSize(8);
+    doc.setFont("helvetica", "normal");
+    doc.text(`Paid via: ${method}`, 4, finalY + 9);
+    if (method === 'Cash' && tendered > 0) {
+        doc.text(`Tendered: KSh ${tendered.toLocaleString()}`, 4, finalY + 13);
+        doc.text(`Change: KSh ${change.toLocaleString()}`, 4, finalY + 17);
+    }
+
+    doc.setFontSize(7);
+    doc.text("--------------------------------------------------", 40, finalY + 22, { align: "center" });
+    doc.text("Thank you for choosing Litaj Hardware!", 40, finalY + 26, { align: "center" });
+    doc.text("Goods once sold are not returnable.", 40, finalY + 29, { align: "center" });
+
+    doc.save(`Receipt_${receiptNo}.pdf`);
+}
+
+// ====================================================================
+// 7. TODAY'S SALES LEDGER (Per User & Store-wide)
+// ====================================================================
+const modalLedger = document.getElementById('modal-ledger');
+document.getElementById('btn-toggle-ledger')?.addEventListener('click', () => {
+    loadTodaysSales();
+    modalLedger.classList.remove('hidden');
+});
+document.getElementById('btn-close-ledger')?.addEventListener('click', () => {
+    modalLedger.classList.add('hidden');
+});
+document.getElementById('ledger-user-filter')?.addEventListener('change', renderTodaysLedger);
+
+async function loadTodaysSales() {
+    try {
+        const today = new Date().toISOString().split('T')[0];
+        const { data, error } = await supabase
+            .from('sales_log')
+            .select('*, inventory(name), users!sales_log_cashier_id_fkey(username, full_name), customers(name)')
+            .gte('timestamp', `${today}T00:00:00Z`)
+            .order('timestamp', { ascending: false });
+
+        if (error) throw error;
+        todaysSales = data || [];
+        renderTodaysLedger();
+    } catch(err) {
+        console.warn('Failed to load today sales:', err.message);
+    }
+}
+
+function renderTodaysLedger() {
+    const filter = document.getElementById('ledger-user-filter')?.value || 'my';
+    const tbody = document.getElementById('ledger-tbody');
+
+    let list = todaysSales;
+
+    // Filter by current cashier if 'my' is selected
+    if (filter === 'my' && currentUser) {
+        list = list.filter(s => s.cashier_id === currentUser.id);
+    }
+
+    let total = 0, cash = 0, mpesa = 0, debt = 0;
+
+    list.forEach(s => {
+        if (!s.is_voided) {
+            total += parseFloat(s.total_charged || 0);
+            const m = (s.payment_method || '').toLowerCase();
+            if (m.includes('cash')) cash += parseFloat(s.total_charged || 0);
+            else if (m.includes('m-pesa') || m.includes('mpesa')) mpesa += parseFloat(s.total_charged || 0);
+            else if (m.includes('debt') || m.includes('credit')) debt += parseFloat(s.total_charged || 0);
+        }
+    });
+
+    document.getElementById('kpi-ledger-total').textContent = `KSh ${total.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+    document.getElementById('kpi-ledger-cash').textContent = `KSh ${cash.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+    document.getElementById('kpi-ledger-mpesa').textContent = `KSh ${mpesa.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+    document.getElementById('kpi-ledger-debt').textContent = `KSh ${debt.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+    document.getElementById('kpi-ledger-count').textContent = list.length;
+
+    if (list.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="8" class="py-12 text-center text-slate-400 font-medium">No sales recorded today for this view.</td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = list.map(s => {
+        const time = new Date(s.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const itemName = s.inventory?.name || 'Item';
+        const cashierName = s.users?.username || 'Staff';
+        const statusBadge = s.is_voided 
+            ? '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700">VOIDED</span>'
+            : `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">${s.payment_method}</span>`;
+
+        return `
+            <tr class="hover:bg-slate-50 border-b border-slate-100 ${s.is_voided ? 'opacity-50 line-through' : ''}">
+                <td class="py-2.5 px-3 font-mono text-slate-500">${time}</td>
+                <td class="py-2.5 px-3 font-mono font-bold text-slate-700">${s.receipt_no || '-'}</td>
+                <td class="py-2.5 px-3 font-bold text-slate-900">${itemName}</td>
+                <td class="py-2.5 px-3 text-center font-bold">${s.calculated_qty}</td>
+                <td class="py-2.5 px-3 text-right font-black text-slate-900">KSh ${parseFloat(s.total_charged || 0).toLocaleString()}</td>
+                <td class="py-2.5 px-3">${statusBadge}</td>
+                <td class="py-2.5 px-3 font-semibold text-slate-600 capitalize">${cashierName}</td>
+                <td class="py-2.5 px-3 text-center">
+                    ${!s.is_voided ? `<button class="btn-void-sale text-red-600 hover:text-red-800 font-bold text-xs" data-id="${s.id}">Void</button>` : '-'}
+                </td>
+            </tr>
+        `;
+    }).join('');
+
+    tbody.querySelectorAll('.btn-void-sale').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const id = btn.dataset.id;
+            if (!confirm('Are you sure you want to VOID this transaction? Stock will be automatically restored.')) return;
+
+            try {
+                const { error } = await supabase.from('sales_log')
+                    .update({ is_voided: true, status: 'voided', voided_at: new Date().toISOString(), voided_by: currentUser?.id })
+                    .eq('id', id);
+
+                if (error) throw error;
+                showToast('Sale voided & stock restored.');
+                await loadTodaysSales();
+                await loadInventory();
+            } catch (err) {
+                alert('Failed to void sale: ' + err.message);
+            }
+        });
+    });
+}
+
+// ====================================================================
+// 8. DEBT COLLECTION MODAL
+// ====================================================================
+const modalDebt = document.getElementById('modal-debt');
+document.getElementById('btn-open-debt-modal')?.addEventListener('click', () => {
+    loadCustomersDropdown();
+    modalDebt.classList.remove('hidden');
+});
+
+document.getElementById('collect-debt-cust-select')?.addEventListener('change', (e) => {
+    const opt = e.target.options[e.target.selectedIndex];
+    const balEl = document.getElementById('collect-debt-bal-display');
+    if (opt && opt.value) {
+        balEl.textContent = `KSh ${parseFloat(opt.dataset.debt || 0).toFixed(2)}`;
+    } else {
+        balEl.textContent = 'KSh 0.00';
     }
 });
+
+document.getElementById('btn-submit-debt-collect')?.addEventListener('click', async () => {
+    const custId = document.getElementById('collect-debt-cust-select').value;
+    const method = document.getElementById('collect-debt-method').value;
+    const amount = parseFloat(document.getElementById('collect-debt-amount').value || 0);
+
+    if (!custId) return alert('Select a customer');
+    if (amount <= 0) return alert('Enter a valid amount paid');
+
+    const btn = document.getElementById('btn-submit-debt-collect');
+    btn.disabled = true;
+    btn.innerHTML = 'Processing...';
+
+    try {
+        const cust = customers.find(c => c.id === custId);
+        const currentDebt = parseFloat(cust?.outstanding_debt || 0);
+        const newDebt = Math.max(0, currentDebt - amount);
+
+        // Record in sales_log as debt_collection
+        const row = {
+            receipt_no: `DEBT-PAY-${Date.now().toString().slice(-6)}`,
+            total_charged: amount,
+            calculated_qty: 1,
+            calculated_profit: 0,
+            cashier_id: currentUser ? currentUser.id : null,
+            customer_id: custId,
+            payment_method: method,
+            status: 'debt_collection',
+            notes: `Debt repayment from ${cust ? cust.name : 'Customer'}`
+        };
+
+        await supabase.from('sales_log').insert([row]);
+        await supabase.from('customers').update({ outstanding_debt: newDebt }).eq('id', custId);
+
+        alert(`Payment of KSh ${amount.toFixed(2)} recorded! New Balance: KSh ${newDebt.toFixed(2)}`);
+        modalDebt.classList.add('hidden');
+        document.getElementById('collect-debt-amount').value = '';
+        await loadCustomersDropdown();
+        await loadTodaysSales();
+    } catch(err) {
+        alert('Failed to collect debt: ' + err.message);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = 'Collect Payment';
+    }
+});
+
+// ====================================================================
+// 9. GLOBAL KEYBOARD SHORTCUTS (Vegas POS Ergonomics)
+// ====================================================================
+document.addEventListener('keydown', (e) => {
+    // F2: Complete Checkout
+    if (e.key === 'F2') {
+        e.preventDefault();
+        openCheckout();
+    }
+    // F3: Focus Search Bar
+    else if (e.key === 'F3') {
+        e.preventDefault();
+        searchInput?.focus();
+        searchInput?.select();
+    }
+    // Escape: Close any open modal
+    else if (e.key === 'Escape') {
+        document.querySelectorAll('.fixed:not(.hidden)').forEach(modal => {
+            if (modal.id !== 'modal-held-carts' && !modal.classList.contains('pointer-events-none')) {
+                modal.classList.add('hidden');
+            }
+        });
+    }
+    // Enter in Checkout modal
+    else if (e.key === 'Enter' && !checkoutModal.classList.contains('hidden') && e.target.tagName !== 'BUTTON') {
+        // If not in a textarea/multiline, submit sale
+        if (e.target.id === 'cash-tendered-input' || e.target.id === 'mpesa-code-input' || e.target.id === 'split-cash-input' || e.target.id === 'split-mpesa-input') {
+            e.preventDefault();
+            processFinalSale();
+        }
+    }
+});
+
+// ====================================================================
+// INITIALIZATION
+// ====================================================================
+loadInventory();
+loadCustomersDropdown();
+loadTodaysSales();
+syncOfflineSales(supabase);
