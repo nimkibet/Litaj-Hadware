@@ -4,6 +4,27 @@ requireAuth();
 
 let inventoryList = [];
 
+function populateCategoryDropdowns() {
+    const rawCategories = inventoryList.map(i => (i.category || '').trim()).filter(Boolean);
+    const standardCategories = ['Building Materials', 'Roofing', 'Timber', 'Fasteners', 'Plumbing', 'Paints', 'Tools', 'Security', 'Electrical', 'Services', 'General'];
+    const allUnique = Array.from(new Set([...standardCategories, ...rawCategories])).sort();
+
+    const catFilter = document.getElementById('inv-cat-filter');
+    if (catFilter) {
+        const curVal = catFilter.value;
+        catFilter.innerHTML = `<option value="ALL">All Categories</option>` + 
+            allUnique.map(c => `<option value="${c}">${c}</option>`).join('');
+        if (allUnique.includes(curVal) || curVal === 'ALL') catFilter.value = curVal;
+    }
+
+    const prodCat = document.getElementById('prod-category');
+    if (prodCat) {
+        const curVal = prodCat.value;
+        prodCat.innerHTML = allUnique.map(c => `<option value="${c}">${c}</option>`).join('');
+        if (allUnique.includes(curVal)) prodCat.value = curVal;
+    }
+}
+
 async function load() {
     const tbody = document.getElementById('inv-tbody');
     tbody.innerHTML = `<tr><td colspan="8" class="py-12 text-center text-slate-400 font-medium">Loading hardware inventory...</td></tr>`;
@@ -12,6 +33,7 @@ async function load() {
         const { data, error } = await supabase.from('inventory').select('*').order('name');
         if (error) throw error;
         inventoryList = data || [];
+        populateCategoryDropdowns();
         renderTable();
     } catch (err) {
         console.error('Error loading inventory:', err);

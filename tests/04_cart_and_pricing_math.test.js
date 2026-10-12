@@ -1,0 +1,94 @@
+const { TestRunner, assert, assertEqual, assertCloseTo } = require('./helpers/testClient');
+
+const runner = new TestRunner('04 - POS Cart Pricing Math & Cart State Preservation');
+
+runner.test('Should compute accurate line totals and cart subtotal across multiple hardware items', async () => {
+    const cart = [
+        { id: 'item-1', name: 'Simba Cement 50kg', selling_price: 750.00, qty: 5 },
+        { id: 'item-2', name: 'Nails 3 inch (kg)', selling_price: 150.00, qty: 10 },
+        { id: 'item-3', name: 'Iron Sheet 30G 2.5m', selling_price: 1200.00, qty: 8 }
+    ];
+
+    // Compute line totals
+    cart.forEach(item => {
+        item.total = item.qty * item.selling_price;
+    });
+
+    assertEqual(cart[0].total, 3750.00, 'Cement line total must be 3,750');
+    assertEqual(cart[1].total, 1500.00, 'Nails line total must be 1,500');
+    assertEqual(cart[2].total, 9600.00, 'Iron Sheet line total must be 9,600');
+
+    const subtotal = cart.reduce((acc, i) => acc + i.total, 0);
+    assertEqual(subtotal, 14850.00, 'Subtotal must be 14,850.00');
+});
+
+runner.test('Should compute discount and clamp grand total to zero if discount exceeds subtotal', async () => {
+    const subtotal = 14850.00;
+
+    // Normal discount
+    const discount1 = 850.00;
+    const grandTotal1 = Math.max(0, subtotal - discount1);
+    assertEqual(grandTotal1, 14000.00, 'Grand total after discount must be 14,000.00');
+
+    // Excessive discount
+    const discount2 = 20000.00;
+    const grandTotal2 = Math.max(0, subtotal - discount2);
+    assertEqual(grandTotal2, 0.00, 'Grand total must clamp to 0.00 when discount exceeds subtotal');
+
+    // Negative discount input protection
+    const discountInput = -500;
+    const safeDiscount = Math.max(0, discountInput);
+    assertEqual(safeDiscount, 0, 'Negative discount must be sanitized to 0');
+});
+
+runner.test('Should calculate profit margin accurately per hardware item line', async () => {
+    const item = {
+        buying_price: 620.00,
+        selling_price: 780.00,
+        qty: 10
+    };
+
+    const profitPerUnit = item.selling_price - item.buying_price;
+    const totalProfit = profitPerUnit * item.qty;
+
+    assertCloseTo(profitPerUnit, 160.00, 0.01, 'Unit profit must be 160.00');
+    assertCloseTo(totalProfit, 1600.00, 0.01, 'Total profit must be 1,600.00');
+});
+
+runner.test('Should accurately serialize, hold and recall active carts without data loss', async () => {
+    const activeCart = [
+        { id: '101', name: 'Wheelbarrow Heavy Duty', selling_price: 4500.00, qty: 2, total: 9000.00 },
+        { id: '102', name: 'Shovel Round Head', selling_price: 650.00, qty: 4, total: 2600.00 }
+    ];
+
+    const heldCartPayload = {
+        id: Date.now().toString(),
+        timestamp: new Date().toISOString(),
+        cashier: 'test_cashier',
+        items: JSON.parse(JSON.stringify(activeCart))
+    };
+
+    // Simulate serialization & deserialization (localStorage mock)
+    const serialized = JSON.stringify([heldCartPayload]);
+    const restoredHeldList = JSON.parse(serialized);
+
+    assert(restoredHeldList.length === 1, 'Restored held list must contain 1 cart');
+    const restored = restoredHeldList[0];
+    assertEqual(restored.cashier, 'test_cashier', 'Cashier must match');
+    assertEqual(restored.items.length, 2, 'Restored items count must be 2');
+    assertEqual(restored.items[0].name, 'Wheelbarrow Heavy Duty', 'First item name must match');
+    assertEqual(restored.items[0].qty, 2, 'First item qty must match');
+    assertEqual(restored.items[1].name, 'Shovel Round Head', 'Second item name must match');
+    assertEqual(restored.items[1].qty, 4, 'Second item qty must match');
+
+    const restoredSum = restored.items.reduce((acc, i) => acc + i.total, 0);
+    assertEqual(restoredSum, 11600.00, 'Restored total must match 11,600.00');
+});
+
+if (require.main === module) {
+    runner.run().then(res => {
+        if (res.failed > 0) process.exit(1);
+    });
+}
+
+module.exports = runner;

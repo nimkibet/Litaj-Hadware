@@ -146,6 +146,61 @@ window.addEventListener('resize', () => {
 // ====================================================================
 // 1. INVENTORY LOADING & HARDWARE CATALOG
 // ====================================================================
+// Store Settings State (Dynamically loaded from database)
+let storeSettings = {
+    store_name: 'LITAJ HARDWARE',
+    store_tagline: 'Building & Construction Materials',
+    store_phone: '+254 700 000 000',
+    store_address: 'Main Commercial Center',
+    receipt_footer: 'Thank you for choosing Litaj Hardware! Goods once sold are not returnable.'
+};
+
+async function loadStoreSettings() {
+    try {
+        if (navigator.onLine) {
+            const { data } = await supabase.from('settings').select('*');
+            if (data && data.length > 0) {
+                data.forEach(s => {
+                    if (s.key && s.value) storeSettings[s.key] = s.value;
+                });
+                localStorage.setItem('litaj_settings_cache', JSON.stringify(storeSettings));
+            }
+        } else {
+            storeSettings = JSON.parse(localStorage.getItem('litaj_settings_cache') || JSON.stringify(storeSettings));
+        }
+    } catch (e) {
+        console.warn('Could not load dynamic settings:', e.message);
+    }
+}
+
+function renderCategoryChips() {
+    const container = document.getElementById('category-chips');
+    if (!container) return;
+
+    const rawCats = inventory
+        .map(i => (i.category || '').trim())
+        .filter(Boolean);
+
+    const uniqueCategories = ['ALL', ...Array.from(new Set(rawCats)).sort()];
+
+    container.innerHTML = uniqueCategories.map(cat => {
+        const isMatch = activeCategory.toLowerCase() === cat.toLowerCase();
+        const label = cat === 'ALL' ? 'All Items' : cat;
+        const chipClass = isMatch
+            ? 'cat-chip active flex-shrink-0 px-3.5 py-2 rounded-xl bg-orange-600 text-white shadow-sm font-bold text-xs sm:text-sm'
+            : 'cat-chip flex-shrink-0 px-3.5 py-2 rounded-xl bg-slate-100 active:bg-slate-200 text-slate-700 transition font-bold text-xs sm:text-sm';
+        return `<button type="button" class="${chipClass}" data-category="${cat}">${label}</button>`;
+    }).join('');
+
+    container.querySelectorAll('.cat-chip').forEach(chip => {
+        chip.addEventListener('click', () => {
+            activeCategory = chip.dataset.category;
+            renderCategoryChips();
+            renderCatalog();
+        });
+    });
+}
+
 async function loadInventory() {
     try {
         const countLabel = document.getElementById('product-count-label');
@@ -160,10 +215,12 @@ async function loadInventory() {
             inventory = JSON.parse(localStorage.getItem('litaj_inventory_cache') || '[]');
         }
 
+        renderCategoryChips();
         renderCatalog();
     } catch (err) {
         console.warn('Failed to load inventory online, using local cache:', err.message);
         inventory = JSON.parse(localStorage.getItem('litaj_inventory_cache') || '[]');
+        renderCategoryChips();
         renderCatalog();
     }
 }
@@ -283,20 +340,6 @@ btnClearSearch?.addEventListener('click', () => {
 });
 
 document.getElementById('btn-refresh-inv')?.addEventListener('click', loadInventory);
-
-// Category Chips Filtering
-document.querySelectorAll('.cat-chip').forEach(chip => {
-    chip.addEventListener('click', () => {
-        document.querySelectorAll('.cat-chip').forEach(c => {
-            c.classList.remove('bg-orange-600', 'text-white', 'shadow-sm');
-            c.classList.add('bg-slate-100', 'text-slate-700');
-        });
-        chip.classList.add('bg-orange-600', 'text-white', 'shadow-sm');
-        chip.classList.remove('bg-slate-100', 'text-slate-700');
-        activeCategory = chip.dataset.category;
-        renderCatalog();
-    });
-});
 
 // Quick Barcode Entry in Footer
 document.getElementById('btn-quick-barcode-add')?.addEventListener('click', handleBarcodeQuickAdd);
@@ -956,15 +999,17 @@ function generateReceiptPDF(receiptNo, items, grandTotal, method, tendered, chan
 
     const cust = customers.find(c => c.id === customerId);
 
-    // Header
+    // Header (Dynamically loaded from database settings)
     doc.setFont("helvetica", "bold");
     doc.setFontSize(14);
-    doc.text("LITAJ HARDWARE", 40, 10, { align: "center" });
+    doc.text(storeSettings.store_name || "LITAJ HARDWARE", 40, 10, { align: "center" });
 
     doc.setFontSize(8);
     doc.setFont("helvetica", "normal");
-    doc.text("Building & Construction Materials", 40, 14, { align: "center" });
-    doc.text("Tel: +254 700 000 000", 40, 18, { align: "center" });
+    doc.text(storeSettings.store_tagline || "Building & Construction Materials", 40, 14, { align: "center" });
+    if (storeSettings.store_phone) {
+        doc.text(`Tel: ${storeSettings.store_phone}`, 40, 18, { align: "center" });
+    }
     doc.text("--------------------------------------------------", 40, 22, { align: "center" });
 
     doc.text(`Receipt: ${receiptNo}`, 4, 27);
@@ -1016,8 +1061,13 @@ function generateReceiptPDF(receiptNo, items, grandTotal, method, tendered, chan
 
     doc.setFontSize(7);
     doc.text("--------------------------------------------------", 40, finalY + 22, { align: "center" });
-    doc.text("Thank you for choosing Litaj Hardware!", 40, finalY + 26, { align: "center" });
-    doc.text("Goods once sold are not returnable.", 40, finalY + 29, { align: "center" });
+    
+    // Dynamic footer notice from settings
+    const footerMsg = storeSettings.receipt_footer || "Thank you for choosing Litaj Hardware!\nGoods once sold are not returnable.";
+    const footerLines = footerMsg.split('\n');
+    footerLines.forEach((line, idx) => {
+        doc.text(line, 40, finalY + 26 + (idx * 3.5), { align: "center" });
+    });
 
     doc.save(`Receipt_${receiptNo}.pdf`);
 }
@@ -1269,6 +1319,7 @@ document.addEventListener('keydown', (e) => {
 // INITIALIZATION
 // ====================================================================
 switchView('products');
+loadStoreSettings();
 loadInventory();
 loadCustomersDropdown();
 loadTodaysSales();
