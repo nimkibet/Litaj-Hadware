@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Litaj Hardware - Redirecting...</title>
+    <meta http-equiv="refresh" content="0; url=/login.html">
+    <script>
+        try {
+            const session = localStorage.getItem('litaj_session');
+            if (session) {
+                const user = JSON.parse(session);
+                if (user && user.id) {
+                    window.location.replace('/pos.html');
+                } else {
+                    window.location.replace('/login.html');
+                }
+            } else {
+                window.location.replace('/login.html');
+            }
+        } catch (e) {
+            window.location.replace('/login.html');
+        }
+    </script>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            background: #0f172a;
+            color: #f8fafc;
+        }
+        .spinner {
+            border: 3px solid rgba(255,255,255,0.1);
+            border-top: 3px solid #ea580c;
+            border-radius: 50%;
+            width: 32px;
+            height: 32px;
+            animation: spin 0.8s linear infinite;
+            margin-bottom: 12px;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <div style="text-align: center;">
+        <div class="spinner" style="margin: 0 auto 12px auto;"></div>
+        <p style="font-size: 14px; font-weight: 600; color: #94a3b8;">Loading Litaj Hardware...</p>
+    </div>
+</body>
+</html>
