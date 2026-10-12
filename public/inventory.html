@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Litaj Hardware — Inventory</title>
+    <meta name="supa-url" content="https://sbpncxjddwontoemkuye.supabase.co">
+    <meta name="supa-key" content="REPLACE_WITH_ANON_KEY">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+        * { font-family: 'Inter', sans-serif; }
+    </style>
+</head>
+<body class="bg-slate-100 min-h-screen">
+
+    <!-- Navigation -->
+    <header class="bg-gradient-to-r from-orange-600 to-orange-700 text-white shadow-lg">
+        <div class="max-w-screen-2xl mx-auto px-4 h-16 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <div class="w-9 h-9 rounded-xl bg-white/15 border border-white/20 flex items-center justify-center font-black text-base text-amber-300">LH</div>
+                <div class="hidden sm:block">
+                    <div class="text-base font-black tracking-tight">LITAJ HARDWARE</div>
+                    <div class="text-[10px] text-orange-200">Inventory Manager</div>
+                </div>
+            </div>
+            <nav class="hidden md:flex items-center gap-1 text-sm font-semibold">
+                <a href="/pos.html"       class="px-3 py-2 rounded-lg hover:bg-white/10 transition-colors">🧾 POS</a>
+                <a href="/inventory.html" class="px-3 py-2 rounded-lg bg-white/15 border border-white/20">📦 Inventory</a>
+                <a href="/customers.html" class="px-3 py-2 rounded-lg hover:bg-white/10 transition-colors">👥 Customers</a>
+                <a href="/admin.html"     class="px-3 py-2 rounded-lg hover:bg-white/10 transition-colors admin-only hidden">⚙️ Admin</a>
+            </nav>
+            <div class="flex items-center gap-3">
+                <span id="current-user-badge" class="hidden sm:inline-flex text-xs bg-orange-800/50 border border-orange-500/30 px-3 py-1.5 rounded-full font-medium text-orange-100">Staff</span>
+                <button id="btn-logout" class="px-3 py-1.5 bg-white text-orange-700 hover:bg-orange-50 rounded-lg text-xs font-bold transition-all shadow-sm">Logout</button>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-screen-2xl mx-auto px-4 py-6">
+
+        <!-- Page Header + Actions -->
+        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
+            <div>
+                <h1 class="text-xl font-black text-slate-900">Hardware Stock Inventory</h1>
+                <p class="text-sm text-slate-500 mt-0.5">Manage products, prices, and stock levels</p>
+            </div>
+            <div class="flex gap-2">
+                <button id="btn-export-excel" class="px-4 py-2 rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 text-sm font-semibold shadow-sm transition-all">
+                    📥 Export Excel
+                </button>
+                <button id="btn-add-product" class="px-4 py-2 rounded-xl bg-orange-600 hover:bg-orange-700 text-white text-sm font-bold shadow-md shadow-orange-200 transition-all active:scale-95">
+                    + Add Product
+                </button>
+            </div>
+        </div>
+
+        <!-- Search & Stats -->
+        <div class="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-6">
+            <div class="sm:col-span-2">
+                <input id="inv-search" type="text" placeholder="🔍 Search products..."
+                    class="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500">
+            </div>
+            <div class="bg-white rounded-xl border border-slate-100 shadow-sm px-4 py-3">
+                <div class="text-xs text-slate-500 font-medium">Total Products</div>
+                <div id="stat-total" class="text-2xl font-black text-slate-900">—</div>
+            </div>
+            <div class="bg-amber-50 rounded-xl border border-amber-200 shadow-sm px-4 py-3">
+                <div class="text-xs text-amber-700 font-medium">⚠️ Low Stock Alerts</div>
+                <div id="stat-low" class="text-2xl font-black text-orange-700">—</div>
+            </div>
+        </div>
+
+        <!-- Inventory Table -->
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead class="bg-slate-50 border-b border-slate-200">
+                        <tr>
+                            <th class="py-3 px-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Product</th>
+                            <th class="py-3 px-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Category</th>
+                            <th class="py-3 px-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Unit</th>
+                            <th class="py-3 px-4 text-right text-xs font-bold text-slate-500 uppercase tracking-wider">Stock</th>
+                            <th class="py-3 px-4 text-right text-xs font-bold text-slate-500 uppercase tracking-wider">Cost</th>
+                            <th class="py-3 px-4 text-right text-xs font-bold text-slate-500 uppercase tracking-wider">Sell Price</th>
+                            <th class="py-3 px-4 text-right text-xs font-bold text-slate-500 uppercase tracking-wider">Margin</th>
+                            <th class="py-3 px-4 text-center text-xs font-bold text-slate-500 uppercase tracking-wider">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="inventory-table-body">
+                        <tr><td colspan="8" class="text-center py-10 text-slate-400">Loading inventory...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <!-- Add / Edit Product Modal -->
+    <div id="modal-product" class="hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div class="bg-gradient-to-r from-orange-600 to-orange-700 rounded-t-2xl px-6 py-4 flex items-center justify-between sticky top-0 z-10">
+                <h3 id="modal-product-title" class="text-white font-bold">Add Hardware Product</h3>
+                <button id="btn-close-modal" class="text-white/70 hover:text-white text-xl font-bold">✕</button>
+            </div>
+            <form id="form-product" class="p-6 space-y-4" novalidate>
+                <!-- Product Name -->
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Product Name *</label>
+                    <input id="prod-name" type="text" required
+                        class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                        placeholder="e.g. Simba Cement 50kg (32.5R)">
+                </div>
+
+                <!-- Category & Unit of Measure -->
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Category *</label>
+                        <select id="prod-category" required class="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-orange-500">
+                            <option value="Cement & Masonry">Cement & Masonry</option>
+                            <option value="Plumbing & Pipes">Plumbing & Pipes</option>
+                            <option value="Electrical">Electrical</option>
+                            <option value="Hand & Power Tools">Hand & Power Tools</option>
+                            <option value="Paint & Thinners">Paint & Thinners</option>
+                            <option value="Nails & Fasteners">Nails & Fasteners</option>
+                            <option value="Roofing & Timber">Roofing & Timber</option>
+                            <option value="Safety Equipment">Safety Equipment</option>
+                            <option value="General Hardware">General Hardware</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Unit of Measure *</label>
+                        <select id="prod-uom" required class="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-orange-500">
+                            <option value="pcs">pcs</option>
+                            <option value="bag">bag</option>
+                            <option value="kg">kg</option>
+                            <option value="ton">ton</option>
+                            <option value="meter">meter</option>
+                            <option value="roll">roll</option>
+                            <option value="litre">litre</option>
+                            <option value="bucket">bucket</option>
+                            <option value="tin">tin</option>
+                            <option value="box">box</option>
+                            <option value="set">set</option>
+                            <option value="pair">pair</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Prices -->
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Buying Price (Ksh) *</label>
+                        <input id="prod-bp" type="number" min="0" step="any" value="0" required
+                            class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Selling Price (Ksh) *</label>
+                        <input id="prod-sp" type="number" min="0" step="any" value="0" required
+                            class="w-full px-4 py-2.5 rounded-xl border border-orange-300 text-sm font-mono font-bold text-orange-700 focus:outline-none focus:ring-2 focus:ring-orange-500">
+                    </div>
+                </div>
+
+                <!-- Live Margin Preview -->
+                <div class="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-2.5 flex justify-between items-center">
+                    <span class="text-xs font-bold text-emerald-700">Calculated Profit Margin</span>
+                    <span id="margin-preview" class="text-sm font-black text-emerald-700 font-mono">Ksh 0.00</span>
+                </div>
+
+                <!-- Stock & Threshold -->
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Current Stock Qty</label>
+                        <input id="prod-stock" type="number" min="0" step="any" value="0"
+                            class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Low Stock Alert At</label>
+                        <input id="prod-min" type="number" min="0" step="any" value="5"
+                            class="w-full px-4 py-2.5 rounded-xl border border-amber-200 text-sm font-mono text-amber-700 focus:outline-none focus:ring-2 focus:ring-amber-400">
+                    </div>
+                </div>
+
+                <!-- Barcode -->
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Barcode (optional)</label>
+                    <input id="prod-barcode" type="text"
+                        class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-mono text-slate-600 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                        placeholder="EAN-13 or custom barcode">
+                </div>
+
+                <!-- Quick Add Toggle -->
+                <div class="flex items-center gap-3 p-3 bg-orange-50 rounded-xl border border-orange-200">
+                    <input type="checkbox" id="prod-quickadd" class="w-4 h-4 accent-orange-600 rounded">
+                    <label for="prod-quickadd" class="text-sm font-semibold text-slate-700 cursor-pointer">
+                        Show on POS Quick-Add Presets
+                    </label>
+                </div>
+
+                <!-- Error -->
+                <div id="form-error" class="hidden text-red-600 text-xs font-semibold bg-red-50 rounded-xl px-4 py-2.5"></div>
+
+                <!-- Submit -->
+                <button id="btn-save-product" type="submit"
+                    class="w-full py-3.5 bg-orange-600 hover:bg-orange-700 text-white font-black rounded-xl transition-all shadow-md shadow-orange-200 active:scale-95">
+                    Save Product
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <script type="module" src="/js/inventory.js"></script>
+</body>
+</html>

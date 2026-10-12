@@ -1,0 +1,37 @@
+<!-- Litaj Hardware POS — Shared Navigation Component -->
+<!-- Include this snippet inside every protected page's <body> -->
+<header class="bg-gradient-to-r from-orange-600 to-orange-700 text-white shadow-lg print:hidden">
+    <div class="max-w-screen-2xl mx-auto px-4 h-16 flex items-center justify-between">
+
+        <!-- Brand -->
+        <div class="flex items-center space-x-3">
+            <div class="w-9 h-9 rounded-xl bg-white/15 border border-white/20 flex items-center justify-center font-black text-base text-amber-300 shrink-0">
+                LH
+            </div>
+            <div class="hidden sm:block">
+                <div class="text-base font-black tracking-tight leading-none">LITAJ HARDWARE</div>
+                <div class="text-[10px] text-orange-200 font-medium">POS & Stock Manager</div>
+            </div>
+        </div>
+
+        <!-- Navigation -->
+        <nav class="hidden md:flex items-center gap-1 text-sm font-semibold">
+            <a href="/pos.html"       class="px-3 py-2 rounded-lg hover:bg-white/10 transition-colors">🧾 POS</a>
+            <a href="/inventory.html" class="px-3 py-2 rounded-lg hover:bg-white/10 transition-colors">📦 Inventory</a>
+            <a href="/customers.html" class="px-3 py-2 rounded-lg hover:bg-white/10 transition-colors">👥 Customers</a>
+            <a href="/admin.html"     class="px-3 py-2 rounded-lg hover:bg-white/10 transition-colors admin-only">⚙️ Admin</a>
+        </nav>
+
+        <!-- User & Actions -->
+        <div class="flex items-center gap-3">
+            <span id="current-user-badge"
+                  class="hidden sm:inline-flex text-xs bg-orange-800/50 border border-orange-500/30 px-3 py-1.5 rounded-full font-medium text-orange-100">
+                Staff
+            </span>
+            <button id="btn-logout"
+                    class="px-3 py-1.5 bg-white text-orange-700 hover:bg-orange-50 rounded-lg text-xs font-bold transition-all shadow-sm">
+                Logout
+            </button>
+        </div>
+    </div>
+</header>

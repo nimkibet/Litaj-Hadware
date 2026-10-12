@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Litaj Hardware — POS Terminal</title>
+    <meta name="supa-url" content="https://sbpncxjddwontoemkuye.supabase.co">
+    <meta name="supa-key" content="REPLACE_WITH_ANON_KEY">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.5.31/dist/jspdf.plugin.autotable.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+        * { font-family: 'Inter', sans-serif; }
+        .cart-scroll { max-height: calc(100vh - 420px); overflow-y: auto; }
+        .category-chip.active { background: #EA580C; color: white; border-color: #EA580C; }
+        @media print { .no-print { display: none !important; } }
+    </style>
+</head>
+<body class="bg-slate-100 min-h-screen">
+
+    <!-- Navigation -->
+    <header class="bg-gradient-to-r from-orange-600 to-orange-700 text-white shadow-lg print:hidden no-print">
+        <div class="max-w-screen-2xl mx-auto px-4 h-16 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <div class="w-9 h-9 rounded-xl bg-white/15 border border-white/20 flex items-center justify-center font-black text-base text-amber-300">LH</div>
+                <div class="hidden sm:block">
+                    <div class="text-base font-black tracking-tight">LITAJ HARDWARE</div>
+                    <div class="text-[10px] text-orange-200">POS Terminal</div>
+                </div>
+            </div>
+            <nav class="hidden md:flex items-center gap-1 text-sm font-semibold">
+                <a href="/pos.html"       class="px-3 py-2 rounded-lg bg-white/15 border border-white/20">🧾 POS</a>
+                <a href="/inventory.html" class="px-3 py-2 rounded-lg hover:bg-white/10 transition-colors">📦 Inventory</a>
+                <a href="/customers.html" class="px-3 py-2 rounded-lg hover:bg-white/10 transition-colors">👥 Customers</a>
+                <a href="/admin.html"     class="px-3 py-2 rounded-lg hover:bg-white/10 transition-colors admin-only hidden">⚙️ Admin</a>
+            </nav>
+            <div class="flex items-center gap-3">
+                <span id="current-user-badge" class="hidden sm:inline-flex text-xs bg-orange-800/50 border border-orange-500/30 px-3 py-1.5 rounded-full font-medium text-orange-100">Staff</span>
+                <button id="btn-logout" class="px-3 py-1.5 bg-white text-orange-700 hover:bg-orange-50 rounded-lg text-xs font-bold transition-all shadow-sm">Logout</button>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-screen-2xl mx-auto px-4 py-5 grid grid-cols-1 lg:grid-cols-3 gap-5">
+
+        <!-- LEFT: Product Discovery -->
+        <div class="lg:col-span-2 flex flex-col gap-4">
+
+            <!-- Quick-Add Presets -->
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
+                <div class="flex items-center justify-between mb-3">
+                    <h2 class="text-xs font-bold text-slate-500 uppercase tracking-widest">⚡ Quick Add</h2>
+                    <span class="text-xs text-slate-400">Tap to add to cart</span>
+                </div>
+                <div id="quick-add-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                    <div class="col-span-full text-center py-4 text-slate-400 text-sm">Loading presets...</div>
+                </div>
+            </div>
+
+            <!-- Search & Category Filter -->
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
+                <div class="flex flex-col sm:flex-row gap-3 mb-3">
+                    <input
+                        id="inp-search"
+                        type="text"
+                        placeholder="🔍 Search by product name or barcode..."
+                        class="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                    >
+                </div>
+                <!-- Category Filter Chips -->
+                <div id="category-chips" class="flex flex-wrap gap-2 text-xs font-semibold">
+                    <!-- Injected by JS -->
+                </div>
+            </div>
+
+            <!-- Product Grid -->
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
+                <div id="product-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                    <div class="col-span-full text-center py-8 text-slate-400 text-sm">Loading hardware catalog...</div>
+                </div>
+            </div>
+
+            <!-- Today's Transactions (Admin: Void, Reprint) -->
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4">
+                <div class="flex items-center justify-between mb-3">
+                    <h2 class="text-xs font-bold text-slate-500 uppercase tracking-widest">📋 Today's Sales Ledger</h2>
+                    <button id="btn-refresh-ledger" class="text-xs text-orange-600 font-bold hover:underline">Refresh</button>
+                </div>
+                <div id="ledger-table" class="overflow-x-auto">
+                    <div class="text-center py-4 text-slate-400 text-sm">Loading today's transactions...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- RIGHT: Cart & Checkout -->
+        <div class="flex flex-col gap-4">
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 flex flex-col h-fit sticky top-5">
+                <!-- Cart Header -->
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="font-black text-slate-800 text-base">🛒 Cart</h2>
+                    <button id="btn-clear-cart" class="text-xs text-red-500 font-bold hover:underline">Clear All</button>
+                </div>
+
+                <!-- Customer Selector -->
+                <div class="mb-3">
+                    <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Customer (optional)</label>
+                    <select id="sel-customer" class="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-orange-500 bg-white">
+                        <option value="">Walk-in Customer</option>
+                    </select>
+                </div>
+
+                <!-- Cart Items -->
+                <div id="cart-items-list" class="cart-scroll space-y-2 mb-4 min-h-[80px]">
+                    <div class="text-center py-8 text-slate-400 text-sm">Cart is empty</div>
+                </div>
+
+                <!-- Cart Totals -->
+                <div class="border-t border-slate-100 pt-4 space-y-1.5 mb-4">
+                    <div class="flex justify-between text-sm text-slate-600">
+                        <span>Subtotal</span>
+                        <span id="cart-subtotal" class="font-semibold">Ksh 0.00</span>
+                    </div>
+                    <div class="flex justify-between text-base font-black text-slate-900">
+                        <span>TOTAL</span>
+                        <span id="cart-grand-total" class="text-orange-600">Ksh 0.00</span>
+                    </div>
+                </div>
+
+                <!-- Payment Buttons -->
+                <div class="grid grid-cols-2 gap-2">
+                    <button data-method="Cash" class="pay-btn py-3 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-bold text-sm transition-all shadow-md shadow-orange-200 active:scale-95">
+                        💵 Cash
+                    </button>
+                    <button data-method="M-Pesa" class="pay-btn py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm transition-all shadow-md active:scale-95">
+                        📱 M-Pesa
+                    </button>
+                    <button data-method="Card" class="pay-btn py-3 rounded-xl bg-slate-700 hover:bg-slate-800 text-white font-bold text-sm transition-all active:scale-95">
+                        💳 Card
+                    </button>
+                    <button data-method="Debt" class="pay-btn py-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-sm transition-all active:scale-95">
+                        📒 Debt
+                    </button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Payment Confirmation Modal -->
+    <div id="modal-payment" class="hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+            <div class="bg-gradient-to-r from-orange-600 to-orange-700 rounded-t-2xl px-6 py-4 flex items-center justify-between">
+                <h3 class="text-white font-bold">Confirm Payment</h3>
+                <button id="btn-close-payment-modal" class="text-white/70 hover:text-white text-xl font-bold">✕</button>
+            </div>
+            <div class="p-6 space-y-4">
+                <div class="flex justify-between text-slate-700">
+                    <span class="font-medium">Payment Method</span>
+                    <span id="modal-pay-method" class="font-black text-orange-700"></span>
+                </div>
+                <div class="flex justify-between text-slate-700">
+                    <span class="font-medium">Amount Due</span>
+                    <span id="modal-pay-total" class="font-black text-slate-900 text-lg"></span>
+                </div>
+                <div id="mpesa-ref-section" class="hidden">
+                    <label class="block text-xs font-bold text-slate-500 mb-1">M-Pesa Transaction Code</label>
+                    <input id="inp-mpesa-ref" type="text" placeholder="e.g. QHX2K45ABC"
+                        class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 uppercase focus:outline-none focus:ring-2 focus:ring-orange-500">
+                </div>
+                <div id="cash-tendered-section" class="hidden">
+                    <label class="block text-xs font-bold text-slate-500 mb-1">Amount Tendered</label>
+                    <input id="inp-tendered" type="number" min="0" step="any" placeholder="0.00"
+                        class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500">
+                    <div class="flex justify-between mt-2 text-sm font-bold text-emerald-700">
+                        <span>Change</span>
+                        <span id="change-display">Ksh 0.00</span>
+                    </div>
+                </div>
+                <button id="btn-confirm-sale" class="w-full py-3.5 bg-orange-600 hover:bg-orange-700 text-white font-black rounded-xl transition-all shadow-md shadow-orange-200 active:scale-95 text-sm">
+                    ✅ Confirm & Generate Receipt
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="/js/pos.js"></script>
+</body>
+</html>

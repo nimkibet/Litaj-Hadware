@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Litaj Hardware — Customers & Debt</title>
+    <meta name="supa-url" content="https://sbpncxjddwontoemkuye.supabase.co">
+    <meta name="supa-key" content="REPLACE_WITH_ANON_KEY">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap'); *{font-family:'Inter',sans-serif}</style>
+</head>
+<body class="bg-slate-100 min-h-screen">
+    <header class="bg-gradient-to-r from-orange-600 to-orange-700 text-white shadow-lg">
+        <div class="max-w-screen-2xl mx-auto px-4 h-16 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <div class="w-9 h-9 rounded-xl bg-white/15 border border-white/20 flex items-center justify-center font-black text-base text-amber-300">LH</div>
+                <div class="hidden sm:block"><div class="text-base font-black">LITAJ HARDWARE</div><div class="text-[10px] text-orange-200">Customers & Debt Ledger</div></div>
+            </div>
+            <nav class="hidden md:flex items-center gap-1 text-sm font-semibold">
+                <a href="/pos.html"       class="px-3 py-2 rounded-lg hover:bg-white/10">🧾 POS</a>
+                <a href="/inventory.html" class="px-3 py-2 rounded-lg hover:bg-white/10">📦 Inventory</a>
+                <a href="/customers.html" class="px-3 py-2 rounded-lg bg-white/15 border border-white/20">👥 Customers</a>
+                <a href="/admin.html"     class="px-3 py-2 rounded-lg hover:bg-white/10 admin-only hidden">⚙️ Admin</a>
+            </nav>
+            <div class="flex items-center gap-3">
+                <span id="current-user-badge" class="hidden sm:inline-flex text-xs bg-orange-800/50 border border-orange-500/30 px-3 py-1.5 rounded-full font-medium text-orange-100">Staff</span>
+                <button id="btn-logout" class="px-3 py-1.5 bg-white text-orange-700 hover:bg-orange-50 rounded-lg text-xs font-bold shadow-sm">Logout</button>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-screen-2xl mx-auto px-4 py-6">
+        <div class="flex items-center justify-between mb-6">
+            <div>
+                <h1 class="text-xl font-black text-slate-900">Customers & Debt Ledger</h1>
+                <p class="text-sm text-slate-500 mt-0.5">Manage credit accounts and repayments</p>
+            </div>
+            <button id="btn-add-customer" class="px-4 py-2 rounded-xl bg-orange-600 hover:bg-orange-700 text-white text-sm font-bold shadow-md shadow-orange-200 transition-all">+ Add Customer</button>
+        </div>
+
+        <!-- Total Debt Card -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+            <div class="sm:col-span-2 bg-amber-50 border border-amber-200 rounded-xl px-5 py-4 shadow-sm">
+                <div class="text-xs text-amber-700 font-bold uppercase tracking-wider mb-1">📒 Total Outstanding Debt</div>
+                <div id="stat-total-debt" class="text-3xl font-black text-orange-700">—</div>
+            </div>
+            <div class="bg-white border border-slate-100 rounded-xl px-5 py-4 shadow-sm">
+                <div class="text-xs text-slate-500 font-bold uppercase tracking-wider mb-1">Total Customers</div>
+                <div id="stat-customers" class="text-3xl font-black text-slate-900">—</div>
+            </div>
+            <div class="bg-white border border-slate-100 rounded-xl px-5 py-4 shadow-sm">
+                <div class="text-xs text-slate-500 font-bold uppercase tracking-wider mb-1">Active Debtors</div>
+                <div id="stat-debtors" class="text-3xl font-black text-slate-900">—</div>
+            </div>
+        </div>
+
+        <!-- Customer Table -->
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+            <div class="p-4 border-b border-slate-100">
+                <input id="cust-search" type="text" placeholder="🔍 Search by name or phone..."
+                    class="w-full max-w-sm px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500">
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead class="bg-slate-50 border-b border-slate-200">
+                        <tr>
+                            <th class="py-3 px-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Customer</th>
+                            <th class="py-3 px-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Phone</th>
+                            <th class="py-3 px-4 text-right text-xs font-bold text-slate-500 uppercase tracking-wider">Outstanding Debt</th>
+                            <th class="py-3 px-4 text-center text-xs font-bold text-slate-500 uppercase tracking-wider">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="customer-table-body">
+                        <tr><td colspan="4" class="text-center py-10 text-slate-400">Loading customers...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <!-- Add/Edit Customer Modal -->
+    <div id="modal-customer" class="hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+            <div class="bg-gradient-to-r from-orange-600 to-orange-700 rounded-t-2xl px-6 py-4 flex items-center justify-between">
+                <h3 id="modal-cust-title" class="text-white font-bold">Add Customer</h3>
+                <button id="btn-close-cust-modal" class="text-white/70 hover:text-white text-xl font-bold">✕</button>
+            </div>
+            <form id="form-customer" class="p-6 space-y-4" novalidate>
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Full Name *</label>
+                    <input id="cust-name" type="text" required placeholder="e.g. John Kamau"
+                        class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Phone Number</label>
+                    <input id="cust-phone" type="tel" placeholder="+254 7XX XXX XXX"
+                        class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Address</label>
+                    <input id="cust-address" type="text" placeholder="e.g. Kirinyaga, Kerugoya"
+                        class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500">
+                </div>
+                <div id="cust-form-error" class="hidden text-red-600 text-xs font-semibold bg-red-50 rounded-xl px-4 py-2.5"></div>
+                <button id="btn-save-customer" type="submit" class="w-full py-3.5 bg-orange-600 hover:bg-orange-700 text-white font-black rounded-xl transition-all shadow-md shadow-orange-200">Save Customer</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Record Payment Modal -->
+    <div id="modal-payment" class="hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
+            <div class="bg-gradient-to-r from-emerald-600 to-emerald-700 rounded-t-2xl px-6 py-4 flex items-center justify-between">
+                <h3 class="text-white font-bold">Record Debt Payment</h3>
+                <button id="btn-close-pay-modal" class="text-white/70 hover:text-white text-xl font-bold">✕</button>
+            </div>
+            <div class="p-6 space-y-4">
+                <div class="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+                    <div class="text-xs text-amber-700 font-bold mb-1">Customer</div>
+                    <div id="pay-cust-name" class="font-black text-slate-900"></div>
+                    <div class="text-xs text-slate-500 mt-0.5">Balance: <span id="pay-cust-debt" class="font-bold text-orange-700"></span></div>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Amount Paid (Ksh) *</label>
+                    <input id="inp-pay-amount" type="number" min="1" step="any" placeholder="0.00"
+                        class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Method</label>
+                    <select id="sel-pay-method" class="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                        <option value="Cash">Cash</option>
+                        <option value="M-Pesa">M-Pesa</option>
+                        <option value="Bank Transfer">Bank Transfer</option>
+                    </select>
+                </div>
+                <button id="btn-confirm-payment" class="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-xl transition-all shadow-md">✅ Record Payment</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="/js/customers.js"></script>
+</body>
+</html>

@@ -1,0 +1,60 @@
+# ============================================================
+# LITAJ HARDWARE POS — .gitignore
+# ============================================================
+
+# ── Secrets & Credentials (NEVER commit these) ──────────────
+.env
+.env.local
+.env.production
+.env.staging
+# Allow the safe example template
+!.env.example
+# Block ALL credentials / secrets text files
+superbase credetnials.txt
+github credentials.txt
+credentials.txt
+secrets.txt
+*.key
+*.pem
+*.p12
+*.pfx
+
+# ── Node.js ──────────────────────────────────────────────────
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+yarn.lock
+.pnpm-debug.log*
+
+# ── OS Generated Files ────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+ehthumbs.db
+
+# ── Editor & IDE ──────────────────────────────────────────────
+.vscode/settings.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# ── Build Outputs ────────────────────────────────────────────
+dist/
+build/
+.cache/
+.parcel-cache/
+*.tsbuildinfo
+
+# ── Logs ──────────────────────────────────────────────────────
+logs/
+*.log
+
+# ── Local Database & Sync Files ──────────────────────────────
+*.db
+*.sqlite
+*.sqlite3
+pos.db
