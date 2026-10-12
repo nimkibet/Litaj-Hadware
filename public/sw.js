@@ -1,4 +1,4 @@
-const CACHE_NAME = 'litaj-hardware-v3-whatsapp';
+const CACHE_NAME = 'litaj-hardware-v4-direct-whatsapp';
 
 // Only pre-cache the offline fallback page at install time.
 // Everything else gets cached as the user visits it (cache-on-navigate).
