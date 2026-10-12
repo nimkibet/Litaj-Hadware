@@ -25,7 +25,7 @@
     </script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
-    <link rel="stylesheet" href="/css/style.css">
+    <link rel="stylesheet" href="/css/style.css?v=3.0">
     <style>
         /* Dynamic Viewport Height & Safe Area Fix for Samsung A03 and all mobile devices */
         :root {
@@ -550,6 +550,48 @@
     </div>
 
     <!-- ========================================================= -->
+    <!-- SALE SUCCESS & WHATSAPP RECEIPT MODAL                      -->
+    <!-- ========================================================= -->
+    <div id="modal-sale-success" class="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-slate-950/80 backdrop-blur-sm hidden p-0 sm:p-4">
+        <div class="bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl w-full max-w-md p-5 sm:p-6 space-y-4 pb-safe border border-slate-100">
+            <div class="text-center space-y-1">
+                <div class="w-14 h-14 mx-auto rounded-2xl bg-emerald-100 text-emerald-600 flex items-center justify-center text-3xl font-black shadow-sm">
+                    ✓
+                </div>
+                <h3 class="text-xl font-black text-slate-900 tracking-tight">Sale Completed!</h3>
+                <p id="success-receipt-info" class="text-xs sm:text-sm text-slate-500 font-semibold font-mono">Ref: LH-000000 • KSh 0.00</p>
+            </div>
+
+            <!-- Prominent WhatsApp Share Card -->
+            <div class="p-3.5 bg-emerald-50 rounded-2xl border-2 border-emerald-300 space-y-2.5">
+                <div class="flex items-center gap-2">
+                    <span class="text-2xl">💬</span>
+                    <div>
+                        <div class="text-sm font-black text-emerald-950">Send Receipt to Customer on WhatsApp</div>
+                        <div class="text-xs text-emerald-700 font-medium">Attaches official PDF receipt & full details</div>
+                    </div>
+                </div>
+                <div class="flex gap-2">
+                    <input type="tel" id="success-wa-phone-input" placeholder="e.g. 0712 345 678" class="flex-1 border-2 border-emerald-400 rounded-xl px-3.5 py-2.5 text-sm sm:text-base font-bold text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white">
+                    <button id="btn-success-send-wa" class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-black rounded-xl text-xs sm:text-sm flex items-center gap-1 shadow-md transition flex-shrink-0">
+                        <span>Send</span> 💬
+                    </button>
+                </div>
+            </div>
+
+            <!-- Secondary Actions: Download PDF or Start Next Sale -->
+            <div class="grid grid-cols-2 gap-2 pt-1">
+                <button id="btn-success-print-pdf" class="py-3 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 active:bg-slate-300 text-slate-800 font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition border border-slate-200">
+                    <span>🖨️</span> Download PDF
+                </button>
+                <button id="btn-success-done" class="py-3 px-3 rounded-xl bg-orange-600 hover:bg-orange-500 active:bg-orange-700 text-white font-black text-xs sm:text-sm flex items-center justify-center gap-1 transition shadow-md shadow-orange-600/20">
+                    Next Sale →
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========================================================= -->
     <!-- DEBT COLLECTION MODAL                                     -->
     <!-- ========================================================= -->
     <div id="modal-debt" class="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/75 backdrop-blur-sm hidden p-0 sm:p-4">
@@ -621,7 +663,7 @@
     </div>
 
     <!-- Script Module -->
-    <script type="module" src="/js/pos.js"></script>
+    <script type="module" src="/js/pos.js?v=3.0"></script>
 
     <script>
         if ('serviceWorker' in navigator) {

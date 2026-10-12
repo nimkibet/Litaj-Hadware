@@ -983,12 +983,23 @@ async function processFinalSale() {
             });
         }
 
+        const completedItems = [...cart];
+        lastCompletedSale = {
+            receiptNo,
+            items: completedItems,
+            grandTotal,
+            method: activePaymentMethod,
+            phone: waPhone,
+            customerName: cust ? cust.name : null,
+            doc: pdfDoc || buildReceiptPDFDoc(receiptNo, completedItems, grandTotal, activePaymentMethod, tenderAmt, changeAmt, customerId)
+        };
+
         // Reset cart and checkout modal
         cart = [];
         renderCart();
         checkoutModal.classList.add('hidden');
 
-        // On mobile, automatically return to products catalog for the next customer
+        // On mobile, return to catalog view for next customer
         if (isMobile()) {
             switchView('products');
         }
@@ -997,8 +1008,8 @@ async function processFinalSale() {
         await loadInventory();
         await loadTodaysSales();
 
-        // Toast notification
-        showToast(`Sale recorded successfully! Ref: ${receiptNo}`);
+        // Open the Sale Success & WhatsApp Share Dialog
+        openSaleSuccessModal(lastCompletedSale);
 
     } catch (err) {
         console.error('Checkout error:', err);
@@ -1009,6 +1020,58 @@ async function processFinalSale() {
         btnSubmitFinalSale.innerHTML = '✓ COMPLETE SALE';
     }
 }
+
+let lastCompletedSale = null;
+
+function openSaleSuccessModal(sale) {
+    const modal = document.getElementById('modal-sale-success');
+    if (!modal) return;
+
+    const info = document.getElementById('success-receipt-info');
+    const phoneInput = document.getElementById('success-wa-phone-input');
+
+    if (info) {
+        info.textContent = `Ref: #${sale.receiptNo} • KSh ${sale.grandTotal.toLocaleString(undefined, {minimumFractionDigits: 2})} (${sale.method})`;
+    }
+    if (phoneInput) {
+        phoneInput.value = sale.phone || '';
+    }
+
+    modal.classList.remove('hidden');
+}
+
+// Button Handlers for Sale Success Dialog
+document.getElementById('btn-success-send-wa')?.addEventListener('click', async () => {
+    if (!lastCompletedSale) return;
+    const phone = document.getElementById('success-wa-phone-input')?.value.trim();
+    const btn = document.getElementById('btn-success-send-wa');
+    btn.disabled = true;
+    btn.innerHTML = 'Sending...';
+
+    try {
+        await shareReceiptViaWhatsApp({
+            ...lastCompletedSale,
+            phone: phone || lastCompletedSale.phone
+        });
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<span>Send</span> 💬';
+    }
+});
+
+document.getElementById('btn-success-print-pdf')?.addEventListener('click', () => {
+    if (!lastCompletedSale) return;
+    if (lastCompletedSale.doc) {
+        lastCompletedSale.doc.save(`Receipt_${lastCompletedSale.receiptNo}.pdf`);
+    } else {
+        const doc = buildReceiptPDFDoc(lastCompletedSale.receiptNo, lastCompletedSale.items, lastCompletedSale.grandTotal, lastCompletedSale.method, 0, 0, null);
+        if (doc) doc.save(`Receipt_${lastCompletedSale.receiptNo}.pdf`);
+    }
+});
+
+document.getElementById('btn-success-done')?.addEventListener('click', () => {
+    document.getElementById('modal-sale-success')?.classList.add('hidden');
+});
 
 // WhatsApp Checkbox and Customer Phone Auto-fill
 document.getElementById('chk-whatsapp-receipt')?.addEventListener('change', (e) => {

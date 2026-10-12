@@ -1,4 +1,4 @@
-const CACHE_NAME = 'litaj-hardware-v1-multi';
+const CACHE_NAME = 'litaj-hardware-v3-whatsapp';
 
 // Only pre-cache the offline fallback page at install time.
 // Everything else gets cached as the user visits it (cache-on-navigate).
@@ -52,7 +52,16 @@ self.addEventListener('fetch', (e) => {
                     });
                 }
 
-                // Cache first for JS/CSS; update in background
+                // Network-first for local application code so updates deploy immediately to all devices
+                const isLocalAppCode = url.pathname.startsWith('/js/') || url.pathname.startsWith('/css/');
+                if (isLocalAppCode) {
+                    return networkFetch.catch(() => {
+                        if (cached) return cached;
+                        return new Response('', { status: 408 });
+                    });
+                }
+
+                // Cache first for static third-party CDNs; update in background
                 if (cached) {
                     networkFetch.catch(() => {}); // background update, ignore errors
                     return cached;
