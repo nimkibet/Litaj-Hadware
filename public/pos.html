@@ -2,224 +2,211 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>POS | Litaj Hardware</title>
     <link rel="manifest" href="/manifest.json">
     <meta name="theme-color" content="#1e293b">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
     <link rel="stylesheet" href="/css/style.css">
     <style>
-        ::-webkit-scrollbar { width: 6px; height: 6px; }
-        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        /* Touch optimization & font scaling to prevent auto-zoom on mobile */
+        input, select, textarea, button {
+            font-size: 16px;
+            -webkit-tap-highlight-color: transparent;
+        }
+        @media (min-width: 640px) {
+            input, select, textarea, button { font-size: 14px; }
+        }
+        /* Mobile safe-area support */
+        .pb-safe { padding-bottom: max(env(safe-area-inset-bottom), 12px); }
+        .pt-safe { padding-top: max(env(safe-area-inset-top), 8px); }
+        .product-card:active { transform: scale(0.98); background-color: #fff7ed; }
+        ::-webkit-scrollbar { width: 4px; height: 4px; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-        input[type=number]::-webkit-inner-spin-button,
-        input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
-        input[type=number] { -moz-appearance: textfield; }
-        .product-row:hover { background-color: #fff7ed; cursor: pointer; }
-        .product-row:active { background-color: #ffedd5; }
     </style>
 </head>
-<body class="bg-slate-100 h-screen flex flex-col font-sans text-slate-800 overflow-hidden">
+<body class="bg-slate-100 h-screen flex flex-col font-sans text-slate-800 overflow-hidden select-none">
 
-    <!-- Top Navigation Bar -->
-    <nav class="bg-slate-900 text-white shadow-md flex-shrink-0 relative z-40 border-b border-slate-800">
-        <div class="max-w-full mx-auto px-4 sm:px-6">
-            <div class="flex items-center justify-between h-14">
-                <!-- Brand & Terminal Info -->
-                <div class="flex items-center gap-3">
-                    <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-orange-600 to-amber-500 flex items-center justify-center text-white font-black text-lg shadow-md shadow-orange-600/30">LH</div>
-                    <div>
-                        <div class="flex items-center gap-2">
-                            <span class="text-base font-black tracking-tight text-white">LITAJ HARDWARE</span>
-                            <span class="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-orange-600 text-white">POS Terminal</span>
-                        </div>
-                        <div class="text-[11px] text-slate-400 font-medium hidden sm:block">Building & Construction Supplies</div>
-                    </div>
+    <!-- ========================================================= -->
+    <!-- TOP HEADER BAR (Mobile-Optimized)                          -->
+    <!-- ========================================================= -->
+    <header class="bg-slate-900 text-white shadow-md flex-shrink-0 relative z-30 border-b border-slate-800 pt-safe">
+        <div class="px-3 sm:px-6 h-14 flex items-center justify-between">
+            <!-- Brand & Terminal Info -->
+            <div class="flex items-center gap-2.5">
+                <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-orange-600 to-amber-500 flex items-center justify-center text-white font-black text-base shadow-md shadow-orange-600/30 flex-shrink-0">
+                    LH
                 </div>
-
-                <!-- Shortcuts indicator -->
-                <div class="hidden lg:flex items-center gap-2 text-xs text-slate-300 bg-slate-800/80 px-3 py-1.5 rounded-lg border border-slate-700">
-                    <span><kbd class="bg-slate-700 px-1.5 py-0.5 rounded text-[10px] font-bold text-orange-400">F2</kbd> Checkout</span>
-                    <span class="text-slate-600">•</span>
-                    <span><kbd class="bg-slate-700 px-1.5 py-0.5 rounded text-[10px] font-bold text-orange-400">F3</kbd> Search</span>
-                    <span class="text-slate-600">•</span>
-                    <span><kbd class="bg-slate-700 px-1.5 py-0.5 rounded text-[10px] font-bold text-orange-400">Esc</kbd> Cancel</span>
-                </div>
-
-                <!-- Cashier / Navigation -->
-                <div class="flex items-center gap-3">
-                    <div class="flex items-center gap-2 px-3 py-1 bg-slate-800 rounded-lg border border-slate-700">
-                        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                        <div class="text-right">
-                            <div id="nav-user-name" class="text-xs font-bold text-slate-100 capitalize">Cashier</div>
-                            <div id="nav-user-role" class="text-[10px] text-orange-400 font-semibold uppercase">Staff</div>
-                        </div>
+                <div>
+                    <div class="flex items-center gap-1.5">
+                        <span class="text-sm sm:text-base font-black tracking-tight text-white leading-none">LITAJ HARDWARE</span>
+                        <span class="text-[9px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-orange-600 text-white leading-none">POS</span>
                     </div>
-
-                    <div class="hidden md:flex items-center space-x-1">
-                        <a href="/inventory.html" class="px-3 py-1.5 text-xs font-bold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 transition">Inventory</a>
-                        <a href="/customers.html" class="px-3 py-1.5 text-xs font-bold rounded-lg admin-only hidden bg-slate-800 hover:bg-slate-700 text-slate-200 transition">Customers</a>
-                        <a href="/users.html" class="px-3 py-1.5 text-xs font-bold rounded-lg admin-only hidden bg-slate-800 hover:bg-slate-700 text-slate-200 transition">Users</a>
-                        <a href="/admin.html" class="px-3 py-1.5 text-xs font-bold rounded-lg admin-only hidden bg-slate-800 hover:bg-slate-700 text-slate-200 transition">Admin</a>
-                        <a href="/analytics.html" class="px-3 py-1.5 text-xs font-bold rounded-lg admin-only hidden bg-slate-800 hover:bg-slate-700 text-slate-200 transition">Analytics</a>
-                        <a href="/profile.html" class="px-3 py-1.5 text-xs font-bold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 transition">Profile</a>
-                        <button id="btn-logout" class="px-3 py-1.5 text-xs font-bold rounded-lg bg-red-950/60 hover:bg-red-900 border border-red-800 text-red-300 transition">Logout</button>
+                    <div class="text-[10px] text-slate-400 font-medium leading-none mt-1 flex items-center gap-1.5">
+                        <span id="conn-status-dot" class="w-2 h-2 rounded-full bg-emerald-400"></span>
+                        <span id="conn-status-text">Online</span>
+                        <span class="text-slate-600">•</span>
+                        <span id="nav-user-name" class="capitalize text-slate-300 font-semibold truncate max-w-[100px] sm:max-w-none">Cashier</span>
                     </div>
-
-                    <!-- Mobile Menu Trigger -->
-                    <button id="mobile-menu-btn" class="md:hidden text-gray-300 hover:text-white p-2">
-                        <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
-                    </button>
                 </div>
             </div>
+
+            <!-- Desktop Shortcuts (Hidden on mobile) -->
+            <div class="hidden xl:flex items-center gap-2 text-xs text-slate-300 bg-slate-800/80 px-3 py-1.5 rounded-lg border border-slate-700">
+                <span><kbd class="bg-slate-700 px-1.5 py-0.5 rounded text-[10px] font-bold text-orange-400">F2</kbd> Checkout</span>
+                <span class="text-slate-600">•</span>
+                <span><kbd class="bg-slate-700 px-1.5 py-0.5 rounded text-[10px] font-bold text-orange-400">F3</kbd> Search</span>
+                <span class="text-slate-600">•</span>
+                <span><kbd class="bg-slate-700 px-1.5 py-0.5 rounded text-[10px] font-bold text-orange-400">Esc</kbd> Cancel</span>
+            </div>
+
+            <!-- Header Actions / Nav Links -->
+            <div class="flex items-center gap-1.5 sm:gap-2">
+                <!-- Desktop nav items -->
+                <div class="hidden lg:flex items-center space-x-1">
+                    <a href="/inventory.html" class="px-3 py-1.5 text-xs font-bold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 transition">Inventory</a>
+                    <a href="/customers.html" class="px-3 py-1.5 text-xs font-bold rounded-lg admin-only hidden bg-slate-800 hover:bg-slate-700 text-slate-200 transition">Customers</a>
+                    <a href="/users.html" class="px-3 py-1.5 text-xs font-bold rounded-lg admin-only hidden bg-slate-800 hover:bg-slate-700 text-slate-200 transition">Users</a>
+                    <a href="/analytics.html" class="px-3 py-1.5 text-xs font-bold rounded-lg admin-only hidden bg-slate-800 hover:bg-slate-700 text-slate-200 transition">Analytics</a>
+                    <a href="/profile.html" class="px-3 py-1.5 text-xs font-bold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 transition">Profile</a>
+                </div>
+
+                <!-- Desktop / Mobile quick logout -->
+                <button id="btn-logout" class="px-2.5 sm:px-3 py-1.5 text-xs font-bold rounded-lg bg-red-950/60 hover:bg-red-900 border border-red-800/80 text-red-300 transition">
+                    Logout
+                </button>
+            </div>
         </div>
+    </header>
 
-        <!-- Mobile Nav Menu -->
-        <div id="mobile-menu" class="hidden md:hidden bg-slate-800 border-t border-slate-700 px-4 py-3 space-y-2">
-            <a href="/inventory.html" class="block px-3 py-2 text-sm font-semibold rounded bg-slate-700 text-white">Inventory</a>
-            <a href="/customers.html" class="block px-3 py-2 text-sm font-semibold rounded admin-only hidden bg-slate-700 text-white">Customers</a>
-            <a href="/users.html" class="block px-3 py-2 text-sm font-semibold rounded admin-only hidden bg-slate-700 text-white">Users</a>
-            <a href="/analytics.html" class="block px-3 py-2 text-sm font-semibold rounded admin-only hidden bg-slate-700 text-white">Analytics</a>
-            <a href="/profile.html" class="block px-3 py-2 text-sm font-semibold rounded bg-slate-700 text-white">Profile</a>
-            <button id="btn-logout-mobile" class="w-full text-left px-3 py-2 text-sm font-bold rounded text-red-400 bg-slate-900">Logout</button>
-        </div>
-    </nav>
+    <!-- ========================================================= -->
+    <!-- MAIN APPLICATION WORKSPACE                                -->
+    <!-- Mobile: Tabbed Panels | Desktop: Side-by-Side 2 Columns    -->
+    <!-- ========================================================= -->
+    <main class="flex-1 overflow-hidden relative flex flex-col lg:flex-row p-2 sm:p-3 gap-2 sm:gap-3">
 
-    <!-- Main POS Workspace: Two-Column Vegas-Style Layout -->
-    <div class="flex-1 flex flex-col lg:flex-row overflow-hidden p-3 gap-3">
-
-        <!-- ========================================================= -->
-        <!-- LEFT COLUMN: INVENTORY SEARCH & PRODUCT CATALOG TABLE     -->
-        <!-- ========================================================= -->
-        <div class="w-full lg:w-7/12 flex flex-col gap-3 h-full overflow-hidden">
+        <!-- ===================================================== -->
+        <!-- PANEL 1: PRODUCTS / CATALOG / LIVE SEARCH             -->
+        <!-- ===================================================== -->
+        <section id="view-products" class="tab-view active w-full lg:w-7/12 flex flex-col gap-2 h-full overflow-hidden">
             
             <!-- Search & Filter Card -->
-            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-3.5 flex flex-col gap-2.5 flex-shrink-0">
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-2.5 sm:p-3 flex flex-col gap-2 flex-shrink-0">
                 <div class="flex items-center gap-2">
                     <div class="relative flex-1">
-                        <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
                             <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                         </div>
                         <input type="text" id="pos-search" 
-                               class="w-full pl-11 pr-10 py-3 bg-slate-50 border border-slate-300 rounded-xl text-base font-bold text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:bg-white transition" 
-                               placeholder="Search product, category, or scan barcode... (F3)" autocomplete="off">
+                               class="w-full pl-10 pr-9 py-2.5 bg-slate-50 border border-slate-300 rounded-xl font-bold text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:bg-white transition" 
+                               placeholder="Search hardware items or barcode..." autocomplete="off">
                         <button id="btn-clear-search" class="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 hidden">
-                            <span class="text-lg font-black">&times;</span>
+                            <span class="text-xl font-black">&times;</span>
                         </button>
                     </div>
-                    <button id="btn-refresh-inv" title="Refresh Products" class="px-3 py-3 bg-slate-100 hover:bg-slate-200 rounded-xl text-slate-700 font-bold transition flex items-center gap-1.5">
+                    <button id="btn-refresh-inv" title="Refresh" class="h-10 px-3 bg-slate-100 active:bg-slate-200 rounded-xl text-slate-700 font-bold transition flex items-center gap-1">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
-                        <span class="hidden sm:inline text-xs">Refresh</span>
                     </button>
                 </div>
 
-                <!-- Category Chips Filter -->
-                <div id="category-chips" class="flex gap-1.5 overflow-x-auto pb-1 text-xs font-bold">
-                    <button class="cat-chip active px-3 py-1.5 rounded-lg bg-orange-600 text-white whitespace-nowrap shadow-sm" data-category="ALL">All Categories</button>
-                    <button class="cat-chip px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 whitespace-nowrap transition" data-category="Building Materials">Building</button>
-                    <button class="cat-chip px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 whitespace-nowrap transition" data-category="Roofing">Roofing</button>
-                    <button class="cat-chip px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 whitespace-nowrap transition" data-category="Timber">Timber</button>
-                    <button class="cat-chip px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 whitespace-nowrap transition" data-category="Fasteners">Fasteners & Nails</button>
-                    <button class="cat-chip px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 whitespace-nowrap transition" data-category="Plumbing">Plumbing</button>
-                    <button class="cat-chip px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 whitespace-nowrap transition" data-category="Paints">Paints</button>
-                    <button class="cat-chip px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 whitespace-nowrap transition" data-category="Tools">Tools</button>
-                    <button class="cat-chip px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 whitespace-nowrap transition" data-category="Security">Security</button>
-                    <button class="cat-chip px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 whitespace-nowrap transition" data-category="Services">Services</button>
+                <!-- Category Filter Chips (Horizontal Touch Scroll) -->
+                <div id="category-chips" class="flex gap-1.5 overflow-x-auto pb-1 text-xs font-bold scrollbar-none">
+                    <button class="cat-chip active flex-shrink-0 px-3 py-1.5 rounded-xl bg-orange-600 text-white shadow-sm" data-category="ALL">All Items</button>
+                    <button class="cat-chip flex-shrink-0 px-3 py-1.5 rounded-xl bg-slate-100 active:bg-slate-200 text-slate-700 transition" data-category="Building Materials">Building</button>
+                    <button class="cat-chip flex-shrink-0 px-3 py-1.5 rounded-xl bg-slate-100 active:bg-slate-200 text-slate-700 transition" data-category="Roofing">Roofing</button>
+                    <button class="cat-chip flex-shrink-0 px-3 py-1.5 rounded-xl bg-slate-100 active:bg-slate-200 text-slate-700 transition" data-category="Timber">Timber</button>
+                    <button class="cat-chip flex-shrink-0 px-3 py-1.5 rounded-xl bg-slate-100 active:bg-slate-200 text-slate-700 transition" data-category="Fasteners">Fasteners & Nails</button>
+                    <button class="cat-chip flex-shrink-0 px-3 py-1.5 rounded-xl bg-slate-100 active:bg-slate-200 text-slate-700 transition" data-category="Plumbing">Plumbing</button>
+                    <button class="cat-chip flex-shrink-0 px-3 py-1.5 rounded-xl bg-slate-100 active:bg-slate-200 text-slate-700 transition" data-category="Paints">Paints</button>
+                    <button class="cat-chip flex-shrink-0 px-3 py-1.5 rounded-xl bg-slate-100 active:bg-slate-200 text-slate-700 transition" data-category="Tools">Tools</button>
+                    <button class="cat-chip flex-shrink-0 px-3 py-1.5 rounded-xl bg-slate-100 active:bg-slate-200 text-slate-700 transition" data-category="Security">Security</button>
+                    <button class="cat-chip flex-shrink-0 px-3 py-1.5 rounded-xl bg-slate-100 active:bg-slate-200 text-slate-700 transition" data-category="Services">Services</button>
                 </div>
             </div>
 
-            <!-- Products Table Area (Vegas POS style) -->
+            <!-- Products List Area (Touch-Friendly Responsive Cards) -->
             <div class="bg-white rounded-2xl shadow-sm border border-slate-200 flex-1 flex flex-col overflow-hidden">
-                <div class="px-4 py-2.5 bg-slate-50 border-b border-slate-200 flex justify-between items-center flex-shrink-0">
-                    <span class="text-xs font-bold text-slate-600 uppercase tracking-wider">Product Catalog</span>
-                    <span id="product-count-label" class="text-xs font-semibold text-slate-400">Loading catalog...</span>
+                <div class="px-3 py-2 bg-slate-50 border-b border-slate-200 flex justify-between items-center flex-shrink-0">
+                    <span class="text-xs font-bold text-slate-500 uppercase tracking-wider">Hardware Catalog</span>
+                    <span id="product-count-label" class="text-xs font-bold text-slate-400">Loading...</span>
                 </div>
-                <div class="flex-1 overflow-y-auto">
-                    <table class="w-full text-left text-sm border-collapse">
-                        <thead class="bg-slate-100 sticky top-0 z-10 text-xs font-bold text-slate-600 uppercase tracking-wider">
-                            <tr>
-                                <th class="py-2.5 px-3">Item Name</th>
-                                <th class="py-2.5 px-3">Category</th>
-                                <th class="py-2.5 px-3 text-right">Price (Ksh)</th>
-                                <th class="py-2.5 px-3 text-center">Stock</th>
-                                <th class="py-2.5 px-3 text-center">Action</th>
-                            </tr>
-                        </thead>
-                        <tbody id="products-tbody" class="divide-y divide-slate-100 text-slate-700">
-                            <tr><td colspan="5" class="py-12 text-center text-slate-400 font-medium">Loading products...</td></tr>
-                        </tbody>
-                    </table>
+                
+                <!-- Product List Container (Optimized for thumb tapping) -->
+                <div id="products-container" class="flex-1 overflow-y-auto divide-y divide-slate-100 p-1 sm:p-2">
+                    <div class="py-12 text-center text-slate-400 font-medium">Loading hardware products...</div>
                 </div>
 
-                <!-- Quick Entry Footer (Barcode scanner & direct qty entry) -->
-                <div class="p-3 bg-slate-50 border-t border-slate-200 flex items-center gap-2 flex-shrink-0">
-                    <div class="flex-1 relative">
-                        <input type="text" id="quick-barcode" placeholder="Scan or enter Barcode..." class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-orange-500 bg-white">
-                    </div>
-                    <div class="w-24">
-                        <input type="number" id="quick-barcode-qty" value="1" min="1" class="w-full border border-slate-300 rounded-xl px-2 py-2 text-sm font-bold text-center focus:outline-none focus:ring-2 focus:ring-orange-500 bg-white" placeholder="Qty">
-                    </div>
-                    <button id="btn-quick-barcode-add" class="bg-slate-800 hover:bg-slate-900 text-white px-4 py-2 rounded-xl text-sm font-bold transition flex items-center gap-1 shadow-sm">
-                        <span>+</span> Add
+                <!-- Quick Barcode / Manual Input Bar (Bottom of Catalog) -->
+                <div class="p-2.5 bg-slate-50 border-t border-slate-200 flex items-center gap-2 flex-shrink-0">
+                    <input type="text" id="quick-barcode" placeholder="Scan or type barcode..." class="flex-1 border border-slate-300 rounded-xl px-3 py-2 font-semibold text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-orange-500">
+                    <input type="number" id="quick-barcode-qty" value="1" min="1" class="w-16 border border-slate-300 rounded-xl px-2 py-2 font-black text-center bg-white focus:outline-none focus:ring-2 focus:ring-orange-500" placeholder="Qty">
+                    <button id="btn-quick-barcode-add" class="h-10 px-4 bg-slate-800 active:bg-slate-900 text-white font-bold rounded-xl text-xs transition flex items-center gap-1 shadow-sm">
+                        + Add
                     </button>
                 </div>
             </div>
-        </div>
 
-        <!-- ========================================================= -->
-        <!-- RIGHT COLUMN: CURRENT CART, TOTALS & CHECKOUT             -->
-        <!-- ========================================================= -->
-        <div class="w-full lg:w-5/12 flex flex-col gap-3 h-full overflow-hidden">
+            <!-- Mobile Floating Cart Review Bar (Visible only when cart has items on mobile) -->
+            <div id="mobile-floating-cart-bar" class="lg:hidden bg-slate-900 text-white rounded-2xl p-3 shadow-xl border border-slate-800 flex items-center justify-between cursor-pointer active:bg-slate-800 transition hidden">
+                <div class="flex items-center gap-2.5">
+                    <div class="w-8 h-8 rounded-lg bg-orange-600 flex items-center justify-center font-black text-sm">🛒</div>
+                    <div>
+                        <div id="floating-cart-items" class="text-xs font-bold text-slate-200">0 items in cart</div>
+                        <div id="floating-cart-total" class="text-sm font-black text-orange-400 leading-tight">KSh 0.00</div>
+                    </div>
+                </div>
+                <button class="px-4 py-2 bg-orange-600 hover:bg-orange-500 text-white font-black rounded-xl text-xs shadow-md">
+                    Review Cart →
+                </button>
+            </div>
+        </section>
+
+        <!-- ===================================================== -->
+        <!-- PANEL 2: CURRENT CART & CHECKOUT                      -->
+        <!-- ===================================================== -->
+        <section id="view-cart" class="tab-view hidden lg:flex w-full lg:w-5/12 flex flex-col gap-2 h-full overflow-hidden">
             
             <div class="bg-white rounded-2xl shadow-sm border border-slate-200 flex-1 flex flex-col overflow-hidden">
                 <!-- Cart Header -->
-                <div class="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50 flex-shrink-0">
+                <div class="p-3 sm:p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50 flex-shrink-0">
                     <div class="flex items-center gap-2">
-                        <h2 class="text-base font-black text-slate-800 tracking-tight">Current Cart</h2>
+                        <!-- Back to products button (visible on mobile view) -->
+                        <button id="btn-cart-back-to-products" class="lg:hidden p-1.5 -ml-1 text-slate-500 hover:text-slate-800">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+                        </button>
+                        <h2 class="text-base font-black text-slate-800 tracking-tight">Active Cart</h2>
                         <span id="cart-item-count-badge" class="px-2 py-0.5 rounded-full text-xs font-bold bg-orange-100 text-orange-700">0 items</span>
                     </div>
-                    <div class="flex items-center gap-2">
-                        <button id="btn-hold-cart" title="Hold Cart" class="text-xs font-bold px-2.5 py-1 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-700 transition">
+                    <div class="flex items-center gap-1.5">
+                        <button id="btn-hold-cart" title="Hold Cart" class="text-xs font-bold px-2.5 py-1.5 rounded-lg bg-slate-200 active:bg-slate-300 text-slate-700 transition">
                             ⏸️ Hold
                         </button>
-                        <button id="btn-recall-cart" title="Recall Cart" class="text-xs font-bold px-2.5 py-1 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-700 transition">
+                        <button id="btn-recall-cart" title="Recall Cart" class="text-xs font-bold px-2.5 py-1.5 rounded-lg bg-slate-200 active:bg-slate-300 text-slate-700 transition">
                             ▶️ Recall
                         </button>
-                        <button id="btn-clear-cart" title="Clear all items" class="text-xs font-bold px-2.5 py-1 rounded-lg bg-red-100 hover:bg-red-200 text-red-700 transition">
-                            🗑️ Clear
+                        <button id="btn-clear-cart" title="Clear all" class="text-xs font-bold px-2 py-1.5 rounded-lg bg-red-100 active:bg-red-200 text-red-700 transition">
+                            🗑️
                         </button>
                     </div>
                 </div>
 
-                <!-- Cart Table (Scrollable) -->
+                <!-- Cart Items List (Mobile Touch Friendly) -->
                 <div class="flex-1 overflow-y-auto p-2">
-                    <table class="w-full text-left text-sm">
-                        <thead class="text-[11px] font-bold text-slate-400 uppercase border-b border-slate-100">
-                            <tr>
-                                <th class="pb-2 px-2">Item</th>
-                                <th class="pb-2 px-2 text-center w-28">Qty</th>
-                                <th class="pb-2 px-2 text-right">Price</th>
-                                <th class="pb-2 px-2 text-right">Total</th>
-                                <th class="pb-2 px-1 text-center w-8"></th>
-                            </tr>
-                        </thead>
-                        <tbody id="cart-tbody" class="divide-y divide-slate-100">
-                            <tr>
-                                <td colspan="5" class="py-16 text-center text-slate-400 font-medium">
-                                    <div class="text-4xl mb-2">🛒</div>
-                                    <div class="font-bold text-slate-600">Cart is empty</div>
-                                    <div class="text-xs mt-1">Select products on the left or scan barcode</div>
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
+                    <div id="cart-items-container" class="space-y-2">
+                        <div class="py-16 text-center text-slate-400 font-medium">
+                            <div class="text-4xl mb-2">🛒</div>
+                            <div class="font-bold text-slate-600">Cart is empty</div>
+                            <div class="text-xs mt-1">Tap hardware items on catalog to add</div>
+                        </div>
+                    </div>
                 </div>
 
-                <!-- Totals & Checkout Panel (Sticky Footer) -->
-                <div class="p-4 bg-slate-900 text-white rounded-b-2xl border-t border-slate-800 flex flex-col gap-3 flex-shrink-0">
+                <!-- Cart Totals & Checkout Panel (Sticky Bottom on both mobile & desktop) -->
+                <div class="p-3 sm:p-4 bg-slate-900 text-white rounded-b-2xl border-t border-slate-800 flex flex-col gap-2.5 flex-shrink-0 pb-safe">
                     <div class="flex justify-between items-center text-xs text-slate-400">
                         <span>SUBTOTAL</span>
                         <span id="lbl-subtotal" class="font-bold text-white text-sm">KSh 0.00</span>
@@ -227,32 +214,32 @@
 
                     <div class="flex justify-between items-center text-xs text-slate-400">
                         <div class="flex items-center gap-2">
-                            <span>DISCOUNT (Ksh)</span>
+                            <span>DISCOUNT</span>
                             <input type="number" id="cart-discount" min="0" value="0" class="w-20 px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-right text-xs font-bold text-amber-400 focus:outline-none focus:ring-1 focus:ring-orange-500">
                         </div>
                         <span id="lbl-discount-val" class="font-semibold text-amber-400">- KSh 0.00</span>
                     </div>
 
-                    <div class="h-px bg-slate-800 my-1"></div>
+                    <div class="h-px bg-slate-800 my-0.5"></div>
 
-                    <!-- Grand Total Display (High contrast Safety Orange) -->
+                    <!-- Grand Total Display -->
                     <div class="flex justify-between items-baseline">
                         <div>
-                            <span class="text-[11px] font-bold uppercase tracking-wider text-orange-400">TOTAL TO PAY</span>
+                            <span class="text-[10px] font-bold uppercase tracking-wider text-orange-400">TOTAL DUE</span>
                             <div class="text-[10px] text-slate-400">Tax inclusive</div>
                         </div>
                         <div id="lbl-grand-total" class="text-3xl sm:text-4xl font-black text-orange-400 tracking-tight">KSh 0.00</div>
                     </div>
 
-                    <!-- Checkout Primary Button -->
-                    <button id="btn-open-checkout" class="w-full py-4 rounded-xl bg-orange-600 hover:bg-orange-500 active:bg-orange-700 text-white font-black text-lg transition flex items-center justify-center gap-2 shadow-lg shadow-orange-600/30">
+                    <!-- Checkout Button -->
+                    <button id="btn-open-checkout" class="w-full py-3.5 sm:py-4 rounded-xl bg-orange-600 hover:bg-orange-500 active:bg-orange-700 text-white font-black text-base sm:text-lg transition flex items-center justify-center gap-2 shadow-lg shadow-orange-600/30">
                         <span>⚡</span> COMPLETE CHECKOUT (F2)
                     </button>
                 </div>
             </div>
 
-            <!-- Bottom Quick Drawer Toggle: Today's Ledger & Collect Debt -->
-            <div class="flex gap-2 flex-shrink-0">
+            <!-- Desktop Bottom Quick Action Buttons (Hidden on mobile) -->
+            <div class="hidden lg:flex gap-2 flex-shrink-0">
                 <button id="btn-toggle-ledger" class="flex-1 py-2.5 px-3 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 shadow-sm transition flex items-center justify-center gap-1.5">
                     <span>📊</span> Today's Sales Ledger
                 </button>
@@ -260,136 +247,224 @@
                     <span>💳</span> Collect Debt Payment
                 </button>
             </div>
-        </div>
-    </div>
+        </section>
+
+        <!-- ===================================================== -->
+        <!-- PANEL 3: TODAY'S SALES LEDGER (Mobile Tab / Desktop Modal)-->
+        <!-- ===================================================== -->
+        <section id="view-ledger" class="tab-view hidden w-full lg:w-full flex-col gap-2 h-full overflow-hidden">
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 flex-1 flex flex-col overflow-hidden">
+                <!-- Header -->
+                <div class="p-3 sm:p-4 bg-slate-900 text-white flex justify-between items-center flex-shrink-0">
+                    <div class="flex items-center gap-2">
+                        <button id="btn-ledger-back-to-products" class="lg:hidden p-1 text-slate-400 hover:text-white">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+                        </button>
+                        <div>
+                            <h2 class="text-sm sm:text-base font-black text-white">Today's Sales Ledger</h2>
+                            <p class="text-[10px] sm:text-xs text-slate-400">Transactions & register performance</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <select id="ledger-user-filter" class="bg-slate-800 text-white text-xs font-bold border border-slate-700 rounded-xl px-2.5 py-1.5 focus:outline-none">
+                            <option value="my">My Sales Today</option>
+                            <option value="all">All Cashiers</option>
+                        </select>
+                        <button id="btn-close-ledger-view" class="hidden px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-bold transition">✕ Back to POS</button>
+                    </div>
+                </div>
+
+                <!-- KPI Summary Badges -->
+                <div class="p-2 sm:p-3 bg-slate-100 border-b border-slate-200 grid grid-cols-2 sm:grid-cols-5 gap-2 flex-shrink-0">
+                    <div class="bg-white p-2.5 rounded-xl border border-slate-200">
+                        <div class="text-[9px] font-bold text-slate-400 uppercase">Total Sales</div>
+                        <div id="kpi-ledger-total" class="text-base font-black text-slate-800">KSh 0.00</div>
+                    </div>
+                    <div class="bg-white p-2.5 rounded-xl border border-slate-200">
+                        <div class="text-[9px] font-bold text-emerald-600 uppercase">Cash</div>
+                        <div id="kpi-ledger-cash" class="text-base font-black text-emerald-700">KSh 0.00</div>
+                    </div>
+                    <div class="bg-white p-2.5 rounded-xl border border-slate-200">
+                        <div class="text-[9px] font-bold text-blue-600 uppercase">M-Pesa</div>
+                        <div id="kpi-ledger-mpesa" class="text-base font-black text-blue-700">KSh 0.00</div>
+                    </div>
+                    <div class="bg-white p-2.5 rounded-xl border border-slate-200">
+                        <div class="text-[9px] font-bold text-red-500 uppercase">Credit / Debt</div>
+                        <div id="kpi-ledger-debt" class="text-base font-black text-red-600">KSh 0.00</div>
+                    </div>
+                    <div class="bg-white p-2.5 rounded-xl border border-slate-200 col-span-2 sm:col-span-1">
+                        <div class="text-[9px] font-bold text-slate-400 uppercase">Count</div>
+                        <div id="kpi-ledger-count" class="text-base font-black text-slate-800">0 sales</div>
+                    </div>
+                </div>
+
+                <!-- Ledger Records (Mobile Card & Table View) -->
+                <div class="flex-1 overflow-y-auto p-2">
+                    <div id="ledger-records-container" class="space-y-2">
+                        <div class="py-12 text-center text-slate-400 font-medium">Loading sales records...</div>
+                    </div>
+                </div>
+
+                <div class="p-2.5 bg-slate-50 border-t border-slate-200 flex justify-between items-center text-xs text-slate-500 flex-shrink-0 pb-safe">
+                    <span>Refreshes automatically upon sale</span>
+                    <button id="btn-collect-debt-from-ledger" class="px-3 py-1.5 bg-orange-600 text-white font-bold rounded-lg text-xs">
+                        💳 Collect Debt
+                    </button>
+                </div>
+            </div>
+        </section>
+
+    </main>
 
     <!-- ========================================================= -->
-    <!-- VEGAS-STYLE FINAL CHECKOUT MODAL                          -->
+    <!-- MOBILE BOTTOM NAVIGATION BAR (Sticky Thumb-Friendly Nav)   -->
+    <!-- Visible on screens < lg (mobile phones & tablets)         -->
     <!-- ========================================================= -->
-    <div id="modal-checkout" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm hidden p-4">
-        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-xl overflow-hidden border border-slate-100 flex flex-col max-h-[90vh]">
+    <nav class="lg:hidden bg-slate-900 border-t border-slate-800 flex items-center justify-around z-40 flex-shrink-0 pb-safe">
+        <button id="tab-btn-products" class="mobile-tab-btn active flex-1 py-2.5 flex flex-col items-center gap-1 text-orange-500 font-bold transition">
+            <span class="text-lg">🛍️</span>
+            <span class="text-[10px]">Catalog</span>
+        </button>
+        <button id="tab-btn-cart" class="mobile-tab-btn flex-1 py-2.5 flex flex-col items-center gap-1 text-slate-400 font-bold transition relative">
+            <span class="text-lg">🛒</span>
+            <span class="text-[10px]">Cart</span>
+            <span id="mobile-cart-badge" class="hidden absolute top-1.5 right-6 w-4 h-4 rounded-full bg-orange-600 text-white text-[9px] font-black flex items-center justify-center">0</span>
+        </button>
+        <button id="tab-btn-ledger" class="mobile-tab-btn flex-1 py-2.5 flex flex-col items-center gap-1 text-slate-400 font-bold transition">
+            <span class="text-lg">📊</span>
+            <span class="text-[10px]">My Sales</span>
+        </button>
+        <button id="tab-btn-debt" class="mobile-tab-btn flex-1 py-2.5 flex flex-col items-center gap-1 text-slate-400 font-bold transition">
+            <span class="text-lg">💳</span>
+            <span class="text-[10px]">Debts</span>
+        </button>
+    </nav>
+
+    <!-- ========================================================= -->
+    <!-- VEGAS-STYLE FINAL CHECKOUT MODAL (Mobile BottomSheet Fit) -->
+    <!-- ========================================================= -->
+    <div id="modal-checkout" class="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/70 backdrop-blur-sm hidden p-0 sm:p-4">
+        <div class="bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden border border-slate-100 flex flex-col max-h-[92vh]">
             
             <!-- Modal Header -->
-            <div class="px-6 py-5 bg-slate-900 text-white flex justify-between items-center">
+            <div class="px-5 py-4 bg-slate-900 text-white flex justify-between items-center flex-shrink-0">
                 <div>
-                    <h3 class="text-xl font-black tracking-tight text-white flex items-center gap-2">
+                    <h3 class="text-lg font-black tracking-tight text-white flex items-center gap-2">
                         <span>FINAL CHECKOUT</span>
-                        <span class="text-xs font-bold px-2 py-0.5 rounded bg-orange-600">Litaj POS</span>
+                        <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-orange-600">Litaj POS</span>
                     </h3>
-                    <p class="text-xs text-slate-400 mt-0.5">Confirm payment method and complete transaction</p>
+                    <p class="text-[11px] text-slate-400">Confirm payment and complete transaction</p>
                 </div>
-                <button id="btn-close-checkout" class="text-slate-400 hover:text-white text-2xl font-black leading-none">&times;</button>
+                <button id="btn-close-checkout" class="text-slate-400 hover:text-white text-2xl font-black leading-none p-1">&times;</button>
             </div>
 
-            <!-- Modal Body -->
-            <div class="p-6 overflow-y-auto flex-1 space-y-5">
+            <!-- Modal Body (Scrollable with mobile input padding) -->
+            <div class="p-4 sm:p-6 overflow-y-auto flex-1 space-y-4">
                 
                 <!-- Grand Total Banner -->
-                <div class="bg-orange-50 border-2 border-orange-200 rounded-2xl p-4 text-center">
-                    <div class="text-xs font-bold text-orange-800 uppercase tracking-widest mb-1">Grand Total Due</div>
-                    <div id="checkout-total-due" class="text-4xl sm:text-5xl font-black text-slate-900 tracking-tight">KSh 0.00</div>
+                <div class="bg-orange-50 border-2 border-orange-200 rounded-2xl p-3 sm:p-4 text-center">
+                    <div class="text-[11px] font-bold text-orange-800 uppercase tracking-widest mb-0.5">Grand Total Due</div>
+                    <div id="checkout-total-due" class="text-3xl sm:text-4xl font-black text-slate-900 tracking-tight">KSh 0.00</div>
                 </div>
 
-                <!-- Payment Method Toggle Buttons (Vegas POS Style) -->
+                <!-- Payment Method Toggle Chips (Large touch targets) -->
                 <div>
-                    <label class="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Select Payment Method</label>
+                    <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Payment Method</label>
                     <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                        <button type="button" class="pay-method-btn active py-3 px-3 rounded-xl border-2 border-orange-600 bg-orange-50 text-orange-700 font-bold text-sm transition flex flex-col items-center gap-1 shadow-sm" data-method="Cash">
-                            <span class="text-lg">💵</span> CASH
+                        <button type="button" class="pay-method-btn active py-3 px-2 rounded-xl border-2 border-orange-600 bg-orange-50 text-orange-700 font-bold text-xs sm:text-sm transition flex flex-col items-center gap-1" data-method="Cash">
+                            <span class="text-base sm:text-lg">💵</span> CASH
                         </button>
-                        <button type="button" class="pay-method-btn py-3 px-3 rounded-xl border-2 border-slate-200 bg-white text-slate-600 font-bold text-sm hover:border-slate-300 transition flex flex-col items-center gap-1" data-method="M-Pesa">
-                            <span class="text-lg">📱</span> M-PESA
+                        <button type="button" class="pay-method-btn py-3 px-2 rounded-xl border-2 border-slate-200 bg-white text-slate-600 font-bold text-xs sm:text-sm active:border-slate-300 transition flex flex-col items-center gap-1" data-method="M-Pesa">
+                            <span class="text-base sm:text-lg">📱</span> M-PESA
                         </button>
-                        <button type="button" class="pay-method-btn py-3 px-3 rounded-xl border-2 border-slate-200 bg-white text-slate-600 font-bold text-sm hover:border-slate-300 transition flex flex-col items-center gap-1" data-method="Split">
-                            <span class="text-lg">🔀</span> SPLIT
+                        <button type="button" class="pay-method-btn py-3 px-2 rounded-xl border-2 border-slate-200 bg-white text-slate-600 font-bold text-xs sm:text-sm active:border-slate-300 transition flex flex-col items-center gap-1" data-method="Split">
+                            <span class="text-base sm:text-lg">🔀</span> SPLIT
                         </button>
-                        <button type="button" class="pay-method-btn py-3 px-3 rounded-xl border-2 border-slate-200 bg-white text-slate-600 font-bold text-sm hover:border-slate-300 transition flex flex-col items-center gap-1" data-method="Debt">
-                            <span class="text-lg">📋</span> CREDIT
+                        <button type="button" class="pay-method-btn py-3 px-2 rounded-xl border-2 border-slate-200 bg-white text-slate-600 font-bold text-xs sm:text-sm active:border-slate-300 transition flex flex-col items-center gap-1" data-method="Debt">
+                            <span class="text-base sm:text-lg">📋</span> CREDIT
                         </button>
                     </div>
                 </div>
 
-                <!-- Dynamic Payment Inputs -->
-                
-                <!-- 1. CASH PANEL -->
-                <div id="checkout-panel-cash" class="pay-panel space-y-4">
+                <!-- 1. CASH SECTION -->
+                <div id="checkout-panel-cash" class="pay-panel space-y-3">
                     <div>
-                        <label class="block text-xs font-bold text-slate-600 mb-1">Amount Tendered (Cash Paid)</label>
-                        <input type="number" id="cash-tendered-input" class="w-full border-2 border-slate-300 rounded-2xl p-3.5 text-2xl font-black text-slate-900 text-center focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500" placeholder="0.00">
+                        <label class="block text-xs font-bold text-slate-600 mb-1">Cash Tendered (Amount Paid)</label>
+                        <input type="number" id="cash-tendered-input" class="w-full border-2 border-slate-300 rounded-2xl p-3 text-xl font-black text-slate-900 text-center focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500" placeholder="0.00">
                     </div>
                     <!-- Quick Denomination Chips -->
-                    <div class="flex flex-wrap gap-2 justify-center">
-                        <button type="button" class="denom-chip px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold" data-val="exact">Exact Amount</button>
-                        <button type="button" class="denom-chip px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold" data-val="500">+500</button>
-                        <button type="button" class="denom-chip px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold" data-val="1000">+1,000</button>
-                        <button type="button" class="denom-chip px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold" data-val="2000">+2,000</button>
-                        <button type="button" class="denom-chip px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold" data-val="5000">+5,000</button>
+                    <div class="flex flex-wrap gap-1.5 justify-center">
+                        <button type="button" class="denom-chip px-3 py-2 rounded-xl bg-slate-100 active:bg-slate-200 text-slate-700 text-xs font-bold" data-val="exact">Exact Amount</button>
+                        <button type="button" class="denom-chip px-3 py-2 rounded-xl bg-slate-100 active:bg-slate-200 text-slate-700 text-xs font-bold" data-val="500">+500</button>
+                        <button type="button" class="denom-chip px-3 py-2 rounded-xl bg-slate-100 active:bg-slate-200 text-slate-700 text-xs font-bold" data-val="1000">+1,000</button>
+                        <button type="button" class="denom-chip px-3 py-2 rounded-xl bg-slate-100 active:bg-slate-200 text-slate-700 text-xs font-bold" data-val="2000">+2,000</button>
+                        <button type="button" class="denom-chip px-3 py-2 rounded-xl bg-slate-100 active:bg-slate-200 text-slate-700 text-xs font-bold" data-val="5000">+5,000</button>
                     </div>
-                    <!-- Change Return Box -->
-                    <div class="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-center">
-                        <div class="text-xs font-bold text-emerald-800 uppercase tracking-wider">Change to Return</div>
-                        <div id="cash-change-label" class="text-2xl font-black text-emerald-600 mt-0.5">KSh 0.00</div>
+                    <!-- Change Label Box -->
+                    <div class="p-3 rounded-2xl bg-emerald-50 border border-emerald-200 text-center">
+                        <div class="text-[10px] font-bold text-emerald-800 uppercase tracking-wider">Change to Return</div>
+                        <div id="cash-change-label" class="text-2xl font-black text-emerald-600">KSh 0.00</div>
                     </div>
                 </div>
 
-                <!-- 2. M-PESA PANEL -->
+                <!-- 2. M-PESA SECTION -->
                 <div id="checkout-panel-mpesa" class="pay-panel hidden space-y-3">
                     <div>
-                        <label class="block text-xs font-bold text-slate-600 mb-1">M-Pesa Transaction Ref / Code</label>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">M-Pesa Transaction Ref Code</label>
                         <input type="text" id="mpesa-code-input" class="w-full border border-slate-300 rounded-xl px-3 py-2.5 text-base font-bold uppercase focus:ring-2 focus:ring-orange-500 outline-none" placeholder="e.g. QKM48XYZ90">
                     </div>
                     <div>
-                        <label class="block text-xs font-bold text-slate-600 mb-1">Customer Phone Number (Optional)</label>
-                        <input type="tel" id="mpesa-phone-input" class="w-full border border-slate-300 rounded-xl px-3 py-2.5 text-sm font-semibold focus:ring-2 focus:ring-orange-500 outline-none" placeholder="e.g. 0712345678">
+                        <label class="block text-xs font-bold text-slate-600 mb-1">Customer Phone (Optional)</label>
+                        <input type="tel" id="mpesa-phone-input" class="w-full border border-slate-300 rounded-xl px-3 py-2.5 text-base font-semibold focus:ring-2 focus:ring-orange-500 outline-none" placeholder="e.g. 0712 345 678">
                     </div>
                 </div>
 
-                <!-- 3. SPLIT PANEL -->
+                <!-- 3. SPLIT SECTION -->
                 <div id="checkout-panel-split" class="pay-panel hidden space-y-3">
-                    <div class="grid grid-cols-2 gap-3">
+                    <div class="grid grid-cols-2 gap-2">
                         <div>
-                            <label class="block text-xs font-bold text-slate-600 mb-1">Cash Portion (Ksh)</label>
-                            <input type="number" id="split-cash-input" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-lg font-bold text-slate-900 focus:ring-2 focus:ring-orange-500 outline-none" placeholder="0">
+                            <label class="block text-[11px] font-bold text-slate-600 mb-1">Cash (Ksh)</label>
+                            <input type="number" id="split-cash-input" class="w-full border border-slate-300 rounded-xl px-3 py-2 font-bold text-slate-900 focus:ring-2 focus:ring-orange-500 outline-none" placeholder="0">
                         </div>
                         <div>
-                            <label class="block text-xs font-bold text-slate-600 mb-1">M-Pesa Portion (Ksh)</label>
-                            <input type="number" id="split-mpesa-input" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-lg font-bold text-orange-600 focus:ring-2 focus:ring-orange-500 outline-none" placeholder="0">
+                            <label class="block text-[11px] font-bold text-slate-600 mb-1">M-Pesa (Ksh)</label>
+                            <input type="number" id="split-mpesa-input" class="w-full border border-slate-300 rounded-xl px-3 py-2 font-bold text-orange-600 focus:ring-2 focus:ring-orange-500 outline-none" placeholder="0">
                         </div>
                     </div>
                     <div>
-                        <label class="block text-xs font-bold text-slate-600 mb-1">M-Pesa Ref Code</label>
-                        <input type="text" id="split-mpesa-ref" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm font-bold uppercase focus:ring-2 focus:ring-orange-500 outline-none" placeholder="e.g. QKM76ABC12">
+                        <label class="block text-[11px] font-bold text-slate-600 mb-1">M-Pesa Ref</label>
+                        <input type="text" id="split-mpesa-ref" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm font-bold uppercase focus:ring-2 focus:ring-orange-500 outline-none" placeholder="Code">
                     </div>
-                    <div class="p-3 bg-slate-100 rounded-xl text-center">
-                        <div class="text-xs font-bold text-slate-600">Balance Remaining</div>
-                        <div id="split-remaining-label" class="text-lg font-black text-slate-900">KSh 0.00</div>
+                    <div class="p-2.5 bg-slate-100 rounded-xl text-center">
+                        <div class="text-[11px] font-bold text-slate-600">Balance Remaining</div>
+                        <div id="split-remaining-label" class="text-base font-black text-slate-900">KSh 0.00</div>
                     </div>
                 </div>
 
-                <!-- 4. CREDIT / DEBT PANEL -->
+                <!-- 4. CREDIT / DEBT SECTION -->
                 <div id="checkout-panel-debt" class="pay-panel hidden space-y-3">
                     <div>
-                        <label class="block text-xs font-bold text-slate-600 mb-1">Select Registered Customer</label>
+                        <label class="block text-xs font-bold text-slate-600 mb-1">Select Customer</label>
                         <select id="debt-customer-dropdown" class="w-full border border-slate-300 rounded-xl px-3 py-2.5 text-sm font-bold bg-white focus:ring-2 focus:ring-orange-500 outline-none">
                             <option value="">-- Choose Customer --</option>
                         </select>
                     </div>
                     <div id="debt-customer-info" class="hidden p-3 bg-red-50 border border-red-200 rounded-xl text-xs">
-                        <div class="font-bold text-red-800">Current Outstanding Debt: <span id="debt-customer-bal" class="text-sm font-black">KSh 0.00</span></div>
-                        <div class="text-slate-600 mt-1">This sale will be added to their credit account balance.</div>
+                        <div class="font-bold text-red-800">Current Balance: <span id="debt-customer-bal" class="text-sm font-black">KSh 0.00</span></div>
+                        <div class="text-slate-600 mt-1">This amount will be added to customer's account.</div>
                     </div>
-                    <button type="button" id="btn-quick-add-customer" class="text-xs font-bold text-orange-600 hover:text-orange-800 flex items-center gap-1">
+                    <button type="button" id="btn-quick-add-customer" class="text-xs font-bold text-orange-600 active:text-orange-800 flex items-center gap-1">
                         ➕ Register New Customer
                     </button>
                 </div>
 
-                <!-- OPTIONAL RECEIPT GENERATION CHECKBOX (User Requirement) -->
-                <div class="pt-2 border-t border-slate-100">
-                    <label class="flex items-center gap-3 p-3 bg-slate-50 hover:bg-slate-100 rounded-2xl border border-slate-200 cursor-pointer transition select-none">
+                <!-- OPTIONAL RECEIPT CHECKBOX (Default: Unchecked) -->
+                <div class="pt-1 border-t border-slate-100">
+                    <label class="flex items-center gap-3 p-3 bg-slate-50 active:bg-slate-100 rounded-2xl border border-slate-200 cursor-pointer transition select-none">
                         <input type="checkbox" id="chk-generate-receipt" class="w-5 h-5 text-orange-600 rounded border-slate-300 focus:ring-orange-500">
                         <div class="flex-1">
-                            <div class="text-xs font-bold text-slate-800">Generate & Print Customer Receipt (PDF)</div>
-                            <div class="text-[11px] text-slate-500 font-medium">Leave unchecked for fast counter checkout without receipt printing</div>
+                            <div class="text-xs font-bold text-slate-800">Generate & Print Receipt (PDF)</div>
+                            <div class="text-[10px] text-slate-400">Leave unchecked for instant sale completion</div>
                         </div>
                     </label>
                 </div>
@@ -398,89 +473,13 @@
             </div>
 
             <!-- Modal Footer -->
-            <div class="px-6 py-4 bg-slate-50 border-t border-slate-200 flex gap-3">
-                <button type="button" id="btn-cancel-checkout" class="flex-1 py-3.5 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl text-sm transition">
+            <div class="px-4 py-3 bg-slate-50 border-t border-slate-200 flex gap-2 pb-safe flex-shrink-0">
+                <button type="button" id="btn-cancel-checkout" class="flex-1 py-3 bg-slate-200 active:bg-slate-300 text-slate-700 font-bold rounded-xl text-xs sm:text-sm transition">
                     Cancel (Esc)
                 </button>
-                <button type="button" id="btn-submit-final-sale" class="flex-2 py-3.5 px-6 bg-orange-600 hover:bg-orange-500 text-white font-black rounded-xl text-sm transition flex items-center justify-center gap-2 shadow-lg shadow-orange-600/30">
-                    ✓ COMPLETE SALE (Enter)
+                <button type="button" id="btn-submit-final-sale" class="flex-2 py-3 px-5 bg-orange-600 hover:bg-orange-500 active:bg-orange-700 text-white font-black rounded-xl text-xs sm:text-sm transition flex items-center justify-center gap-1.5 shadow-md shadow-orange-600/30">
+                    ✓ COMPLETE SALE
                 </button>
-            </div>
-        </div>
-    </div>
-
-    <!-- ========================================================= -->
-    <!-- TODAY'S SALES LEDGER DRAWER / MODAL                       -->
-    <!-- ========================================================= -->
-    <div id="modal-ledger" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm hidden p-4">
-        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-5xl overflow-hidden border border-slate-100 flex flex-col max-h-[92vh]">
-            <!-- Ledger Header -->
-            <div class="px-6 py-4 bg-slate-900 text-white flex justify-between items-center flex-shrink-0">
-                <div class="flex items-center gap-3">
-                    <span class="text-2xl">📊</span>
-                    <div>
-                        <h3 class="text-lg font-black text-white">Today's Sales Ledger</h3>
-                        <p class="text-xs text-slate-400">Real-time transactions and cashier performance</p>
-                    </div>
-                </div>
-                <div class="flex items-center gap-3">
-                    <!-- Cashier View Selector -->
-                    <select id="ledger-user-filter" class="bg-slate-800 text-white text-xs font-bold border border-slate-700 rounded-lg px-3 py-1.5 focus:outline-none">
-                        <option value="my">My Sales Today</option>
-                        <option value="all">All Cashiers</option>
-                    </select>
-                    <button id="btn-close-ledger" class="text-slate-400 hover:text-white text-2xl font-black leading-none">&times;</button>
-                </div>
-            </div>
-
-            <!-- Ledger KPI Badges -->
-            <div class="p-4 bg-slate-100 border-b border-slate-200 grid grid-cols-2 sm:grid-cols-5 gap-3 flex-shrink-0">
-                <div class="bg-white p-3 rounded-xl border border-slate-200">
-                    <div class="text-[10px] font-bold text-slate-400 uppercase">Total Sales</div>
-                    <div id="kpi-ledger-total" class="text-lg font-black text-slate-800">KSh 0.00</div>
-                </div>
-                <div class="bg-white p-3 rounded-xl border border-slate-200">
-                    <div class="text-[10px] font-bold text-emerald-600 uppercase">Cash In Drawer</div>
-                    <div id="kpi-ledger-cash" class="text-lg font-black text-emerald-700">KSh 0.00</div>
-                </div>
-                <div class="bg-white p-3 rounded-xl border border-slate-200">
-                    <div class="text-[10px] font-bold text-blue-600 uppercase">M-Pesa Received</div>
-                    <div id="kpi-ledger-mpesa" class="text-lg font-black text-blue-700">KSh 0.00</div>
-                </div>
-                <div class="bg-white p-3 rounded-xl border border-slate-200">
-                    <div class="text-[10px] font-bold text-red-500 uppercase">Credit / Debt</div>
-                    <div id="kpi-ledger-debt" class="text-lg font-black text-red-600">KSh 0.00</div>
-                </div>
-                <div class="bg-white p-3 rounded-xl border border-slate-200">
-                    <div class="text-[10px] font-bold text-slate-400 uppercase">Transactions</div>
-                    <div id="kpi-ledger-count" class="text-lg font-black text-slate-800">0</div>
-                </div>
-            </div>
-
-            <!-- Ledger Table -->
-            <div class="flex-1 overflow-y-auto p-4">
-                <table class="w-full text-left text-xs border-collapse">
-                    <thead class="bg-slate-50 sticky top-0 text-[11px] font-bold text-slate-500 uppercase border-b border-slate-200">
-                        <tr>
-                            <th class="py-2.5 px-3">Time</th>
-                            <th class="py-2.5 px-3">Receipt / Ref</th>
-                            <th class="py-2.5 px-3">Product / Service</th>
-                            <th class="py-2.5 px-3 text-center">Qty</th>
-                            <th class="py-2.5 px-3 text-right">Total (Ksh)</th>
-                            <th class="py-2.5 px-3">Method</th>
-                            <th class="py-2.5 px-3">Cashier</th>
-                            <th class="py-2.5 px-3 text-center">Action</th>
-                        </tr>
-                    </thead>
-                    <tbody id="ledger-tbody" class="divide-y divide-slate-100">
-                        <tr><td colspan="8" class="py-12 text-center text-slate-400 font-medium">Loading today's ledger...</td></tr>
-                    </tbody>
-                </table>
-            </div>
-
-            <div class="p-3 bg-slate-50 border-t border-slate-200 flex justify-between items-center text-xs text-slate-500">
-                <span>Showing transactions recorded today for Litaj Hardware</span>
-                <button onclick="document.getElementById('btn-close-ledger').click()" class="px-4 py-1.5 bg-slate-200 hover:bg-slate-300 rounded-lg text-slate-700 font-bold">Close</button>
             </div>
         </div>
     </div>
@@ -488,11 +487,11 @@
     <!-- ========================================================= -->
     <!-- DEBT COLLECTION MODAL                                     -->
     <!-- ========================================================= -->
-    <div id="modal-debt" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm hidden p-4">
-        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden border border-slate-100 p-6 space-y-4">
+    <div id="modal-debt" class="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/70 backdrop-blur-sm hidden p-0 sm:p-4">
+        <div class="bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl w-full max-w-md p-5 space-y-4 pb-safe border border-slate-100">
             <div class="flex justify-between items-center">
-                <h3 class="text-lg font-black text-slate-800">💳 Collect Debt Payment</h3>
-                <button onclick="document.getElementById('modal-debt').classList.add('hidden')" class="text-slate-400 hover:text-slate-600 text-2xl font-bold leading-none">&times;</button>
+                <h3 class="text-base font-black text-slate-800">💳 Collect Debt Payment</h3>
+                <button onclick="document.getElementById('modal-debt').classList.add('hidden')" class="text-slate-400 text-2xl font-bold leading-none p-1">&times;</button>
             </div>
             <div>
                 <label class="block text-xs font-bold text-slate-600 mb-1">Customer With Balance</label>
@@ -500,55 +499,55 @@
                     <option value="">- Select Customer -</option>
                 </select>
             </div>
-            <div class="p-3 bg-red-50 border border-red-200 rounded-xl flex justify-between items-center">
-                <span class="text-xs font-bold text-red-800">Current Outstanding Balance:</span>
+            <div class="p-3 bg-red-50 border border-red-200 rounded-xl flex justify-between items-center text-xs">
+                <span class="font-bold text-red-800">Current Balance:</span>
                 <span id="collect-debt-bal-display" class="text-base font-black text-red-700">KSh 0.00</span>
             </div>
-            <div class="grid grid-cols-2 gap-3">
+            <div class="grid grid-cols-2 gap-2">
                 <div>
-                    <label class="block text-xs font-bold text-slate-600 mb-1">Payment Method</label>
+                    <label class="block text-[11px] font-bold text-slate-600 mb-1">Payment Method</label>
                     <select id="collect-debt-method" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm font-bold bg-white">
                         <option value="Cash">Cash</option>
                         <option value="M-Pesa">M-Pesa</option>
                     </select>
                 </div>
                 <div>
-                    <label class="block text-xs font-bold text-slate-600 mb-1">Amount Paid (Ksh)</label>
+                    <label class="block text-[11px] font-bold text-slate-600 mb-1">Amount Paid (Ksh)</label>
                     <input type="number" id="collect-debt-amount" min="1" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm font-bold" placeholder="0">
                 </div>
             </div>
-            <div class="flex gap-2 pt-2">
-                <button onclick="document.getElementById('modal-debt').classList.add('hidden')" class="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs">Cancel</button>
-                <button id="btn-submit-debt-collect" class="flex-1 py-2.5 bg-orange-600 hover:bg-orange-700 text-white font-bold rounded-xl text-xs shadow-md shadow-orange-600/30">Collect Payment</button>
+            <div class="flex gap-2 pt-1">
+                <button onclick="document.getElementById('modal-debt').classList.add('hidden')" class="flex-1 py-3 bg-slate-100 text-slate-700 font-bold rounded-xl text-xs">Cancel</button>
+                <button id="btn-submit-debt-collect" class="flex-1 py-3 bg-orange-600 hover:bg-orange-700 text-white font-bold rounded-xl text-xs shadow-md shadow-orange-600/30">Collect Payment</button>
             </div>
         </div>
     </div>
 
     <!-- Quick Add Customer Modal -->
-    <div id="modal-quick-customer" class="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/70 backdrop-blur-sm hidden p-4">
-        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+    <div id="modal-quick-customer" class="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-slate-950/70 backdrop-blur-sm hidden p-0 sm:p-4">
+        <div class="bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl w-full max-w-sm p-5 space-y-3 pb-safe">
             <h3 class="text-base font-black text-slate-800">➕ Add New Customer</h3>
             <div>
-                <label class="block text-xs font-bold text-slate-600 mb-1">Customer Full Name <span class="text-red-500">*</span></label>
+                <label class="block text-xs font-bold text-slate-600 mb-1">Full Name <span class="text-red-500">*</span></label>
                 <input type="text" id="new-cust-name" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm font-semibold" placeholder="e.g. John Mwangi">
             </div>
             <div>
                 <label class="block text-xs font-bold text-slate-600 mb-1">Phone Number</label>
                 <input type="tel" id="new-cust-phone" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm font-semibold" placeholder="e.g. 0712 345 678">
             </div>
-            <div class="flex gap-2 pt-2">
-                <button onclick="document.getElementById('modal-quick-customer').classList.add('hidden')" class="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs">Cancel</button>
-                <button id="btn-save-quick-cust" class="flex-1 py-2.5 bg-orange-600 hover:bg-orange-700 text-white font-bold rounded-xl text-xs">Save Customer</button>
+            <div class="flex gap-2 pt-1">
+                <button onclick="document.getElementById('modal-quick-customer').classList.add('hidden')" class="flex-1 py-2.5 bg-slate-100 text-slate-700 font-bold rounded-xl text-xs">Cancel</button>
+                <button id="btn-save-quick-cust" class="flex-1 py-2.5 bg-orange-600 text-white font-bold rounded-xl text-xs">Save</button>
             </div>
         </div>
     </div>
 
-    <!-- Held Carts Recall Modal -->
-    <div id="modal-held-carts" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm hidden p-4">
-        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-md p-6 space-y-4">
+    <!-- Held Carts Modal -->
+    <div id="modal-held-carts" class="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/70 backdrop-blur-sm hidden p-0 sm:p-4">
+        <div class="bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl w-full max-w-md p-5 space-y-3 pb-safe">
             <div class="flex justify-between items-center">
                 <h3 class="text-base font-black text-slate-800">⏸️ Held Carts</h3>
-                <button onclick="document.getElementById('modal-held-carts').classList.add('hidden')" class="text-slate-400 hover:text-slate-600 text-xl font-bold">&times;</button>
+                <button onclick="document.getElementById('modal-held-carts').classList.add('hidden')" class="text-slate-400 text-xl font-bold">&times;</button>
             </div>
             <div id="held-carts-list" class="space-y-2 max-h-60 overflow-y-auto">
                 <div class="text-xs text-slate-400 text-center py-4">No carts on hold</div>
@@ -556,10 +555,9 @@
         </div>
     </div>
 
-    <!-- Main Module Script -->
+    <!-- Script Module -->
     <script type="module" src="/js/pos.js"></script>
 
-    <!-- Service Worker Registration -->
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {

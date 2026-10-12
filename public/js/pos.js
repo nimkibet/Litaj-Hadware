@@ -12,30 +12,144 @@ let cart = [];
 let todaysSales = [];
 let activeCategory = 'ALL';
 let activePaymentMethod = 'Cash';
+let currentActiveView = 'products'; // 'products', 'cart', 'ledger'
 
-// Navigation User Display
+// Header User & Connection Status
 if (currentUser) {
     const nameEl = document.getElementById('nav-user-name');
-    const roleEl = document.getElementById('nav-user-role');
     if (nameEl) nameEl.textContent = currentUser.full_name || currentUser.username;
-    if (roleEl) roleEl.textContent = currentUser.role || 'Staff';
 }
 
-// Mobile menu toggle
-document.getElementById('mobile-menu-btn')?.addEventListener('click', () => {
-    document.getElementById('mobile-menu')?.classList.toggle('hidden');
+function updateConnectionStatus() {
+    const dot = document.getElementById('conn-status-dot');
+    const text = document.getElementById('conn-status-text');
+    if (navigator.onLine) {
+        if (dot) dot.className = "w-2 h-2 rounded-full bg-emerald-400";
+        if (text) text.textContent = "Online";
+    } else {
+        if (dot) dot.className = "w-2 h-2 rounded-full bg-amber-400 animate-pulse";
+        if (text) text.textContent = "Offline (Queuing)";
+    }
+}
+window.addEventListener('online', () => {
+    updateConnectionStatus();
+    syncOfflineSales(supabase);
 });
-document.getElementById('btn-logout-mobile')?.addEventListener('click', () => {
-    document.getElementById('btn-logout')?.click();
+window.addEventListener('offline', updateConnectionStatus);
+updateConnectionStatus();
+
+// ====================================================================
+// MOBILE-FIRST RESPONSIVE VIEW SWITCHER
+// ====================================================================
+const viewProducts = document.getElementById('view-products');
+const viewCart = document.getElementById('view-cart');
+const viewLedger = document.getElementById('view-ledger');
+
+const tabBtnProducts = document.getElementById('tab-btn-products');
+const tabBtnCart = document.getElementById('tab-btn-cart');
+const tabBtnLedger = document.getElementById('tab-btn-ledger');
+const tabBtnDebt = document.getElementById('tab-btn-debt');
+
+function isMobile() {
+    return window.innerWidth < 1024;
+}
+
+function switchView(target) {
+    currentActiveView = target;
+    const mobile = isMobile();
+
+    // Reset mobile tab buttons styling
+    const tabs = [
+        { btn: tabBtnProducts, name: 'products' },
+        { btn: tabBtnCart, name: 'cart' },
+        { btn: tabBtnLedger, name: 'ledger' }
+    ];
+
+    tabs.forEach(t => {
+        if (t.btn) {
+            if (t.name === target) {
+                t.btn.classList.add('text-orange-500');
+                t.btn.classList.remove('text-slate-400');
+            } else {
+                t.btn.classList.remove('text-orange-500');
+                t.btn.classList.add('text-slate-400');
+            }
+        }
+    });
+
+    if (mobile) {
+        // On Mobile: Only one view is active at a time
+        if (target === 'products') {
+            viewProducts?.classList.remove('hidden');
+            viewCart?.classList.add('hidden');
+            viewLedger?.classList.add('hidden');
+        } else if (target === 'cart') {
+            viewProducts?.classList.add('hidden');
+            viewCart?.classList.remove('hidden');
+            viewLedger?.classList.add('hidden');
+        } else if (target === 'ledger') {
+            viewProducts?.classList.add('hidden');
+            viewCart?.classList.add('hidden');
+            viewLedger?.classList.remove('hidden');
+            loadTodaysSales();
+        }
+    } else {
+        // On Desktop (>= 1024px):
+        if (target === 'ledger') {
+            // Full ledger mode on desktop
+            viewProducts?.classList.add('hidden');
+            viewCart?.classList.add('hidden');
+            viewLedger?.classList.remove('hidden');
+            document.getElementById('btn-close-ledger-view')?.classList.remove('hidden');
+            loadTodaysSales();
+        } else {
+            // Default 2-column split POS mode
+            viewProducts?.classList.remove('hidden');
+            viewCart?.classList.remove('hidden');
+            viewLedger?.classList.add('hidden');
+            document.getElementById('btn-close-ledger-view')?.classList.add('hidden');
+        }
+    }
+}
+
+// Mobile Tab Bar Click Handlers
+tabBtnProducts?.addEventListener('click', () => switchView('products'));
+tabBtnCart?.addEventListener('click', () => switchView('cart'));
+tabBtnLedger?.addEventListener('click', () => switchView('ledger'));
+tabBtnDebt?.addEventListener('click', () => {
+    loadCustomersDropdown();
+    document.getElementById('modal-debt')?.classList.remove('hidden');
+});
+
+// Mobile Back Buttons
+document.getElementById('btn-cart-back-to-products')?.addEventListener('click', () => switchView('products'));
+document.getElementById('btn-ledger-back-to-products')?.addEventListener('click', () => switchView('products'));
+document.getElementById('mobile-floating-cart-bar')?.addEventListener('click', () => switchView('cart'));
+
+// Desktop Ledger Toggle Buttons
+document.getElementById('btn-toggle-ledger')?.addEventListener('click', () => switchView('ledger'));
+document.getElementById('btn-close-ledger-view')?.addEventListener('click', () => switchView('products'));
+
+// Handle responsive resize dynamically
+window.addEventListener('resize', () => {
+    if (!isMobile()) {
+        if (currentActiveView !== 'ledger') {
+            viewProducts?.classList.remove('hidden');
+            viewCart?.classList.remove('hidden');
+            viewLedger?.classList.add('hidden');
+        }
+    } else {
+        switchView(currentActiveView);
+    }
 });
 
 // ====================================================================
-// 1. INVENTORY LOADING & LIVE CATALOG
+// 1. INVENTORY LOADING & HARDWARE CATALOG
 // ====================================================================
 async function loadInventory() {
     try {
-        const productCountLabel = document.getElementById('product-count-label');
-        if (productCountLabel) productCountLabel.textContent = 'Loading...';
+        const countLabel = document.getElementById('product-count-label');
+        if (countLabel) countLabel.textContent = 'Refreshing...';
 
         if (navigator.onLine) {
             const { data, error } = await supabase.from('inventory').select('*').order('name');
@@ -48,23 +162,23 @@ async function loadInventory() {
 
         renderCatalog();
     } catch (err) {
-        console.warn('Failed to load inventory online, using cache:', err.message);
+        console.warn('Failed to load inventory online, using local cache:', err.message);
         inventory = JSON.parse(localStorage.getItem('litaj_inventory_cache') || '[]');
         renderCatalog();
     }
 }
 
 function renderCatalog() {
-    const tbody = document.getElementById('products-tbody');
+    const container = document.getElementById('products-container');
+    if (!container) return;
+
     const searchTerm = (document.getElementById('pos-search')?.value || '').trim().toLowerCase();
     const countLabel = document.getElementById('product-count-label');
 
-    let filtered = inventory.filter(item => {
-        // Category filter
+    const filtered = inventory.filter(item => {
         const matchCat = activeCategory === 'ALL' || 
             (item.category && item.category.toLowerCase() === activeCategory.toLowerCase());
 
-        // Search filter
         const matchSearch = !searchTerm || 
             item.name.toLowerCase().includes(searchTerm) ||
             (item.category && item.category.toLowerCase().includes(searchTerm)) ||
@@ -78,59 +192,61 @@ function renderCatalog() {
     }
 
     if (filtered.length === 0) {
-        tbody.innerHTML = `
-            <tr>
-                <td colspan="5" class="py-12 text-center text-slate-400 font-medium">
-                    <div class="text-3xl mb-1">🔍</div>
-                    <div>No hardware products found matching "${searchTerm}"</div>
-                </td>
-            </tr>`;
+        container.innerHTML = `
+            <div class="py-16 text-center text-slate-400 font-medium">
+                <div class="text-4xl mb-2">🔍</div>
+                <div class="text-sm font-bold text-slate-700">No hardware products found</div>
+                <div class="text-xs text-slate-400 mt-1">${searchTerm ? `No matches for "${searchTerm}"` : 'Select a different category'}</div>
+            </div>`;
         return;
     }
 
-    tbody.innerHTML = filtered.map(item => {
-        // Stock badge color
-        let stockBadge = '';
+    container.innerHTML = filtered.map(item => {
+        let stockBadgeHtml = '';
+        const isOutOfStock = !item.is_service && item.stock_quantity <= 0;
+
         if (item.is_service) {
-            stockBadge = `<span class="px-2 py-0.5 rounded text-xs font-bold bg-slate-100 text-slate-600">Service</span>`;
-        } else if (item.stock_quantity <= 0) {
-            stockBadge = `<span class="px-2 py-0.5 rounded text-xs font-bold bg-red-100 text-red-700">Out of Stock</span>`;
+            stockBadgeHtml = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-600">Service</span>`;
+        } else if (isOutOfStock) {
+            stockBadgeHtml = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700">Out of Stock</span>`;
         } else if (item.stock_quantity <= (item.min_threshold || 10)) {
-            stockBadge = `<span class="px-2 py-0.5 rounded text-xs font-bold bg-amber-100 text-amber-800">${item.stock_quantity} left</span>`;
+            stockBadgeHtml = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800">${item.stock_quantity} left</span>`;
         } else {
-            stockBadge = `<span class="px-2 py-0.5 rounded text-xs font-bold bg-emerald-100 text-emerald-800">${item.stock_quantity} in stock</span>`;
+            stockBadgeHtml = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">${item.stock_quantity} in stock</span>`;
         }
 
-        const barcodeDisplay = item.barcode ? `<span class="font-mono text-xs text-slate-400">${item.barcode}</span>` : '<span class="text-slate-300">-</span>';
+        const formattedPrice = parseFloat(item.selling_price || 0).toLocaleString(undefined, {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        });
 
         return `
-            <tr class="product-row transition border-b border-slate-100" data-id="${item.id}">
-                <td class="py-3 px-3">
-                    <div class="font-bold text-slate-900 leading-tight">${item.name}</div>
-                    <div class="text-[11px] text-slate-400">${barcodeDisplay}</div>
-                </td>
-                <td class="py-3 px-3">
-                    <span class="text-xs font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-600">${item.category || 'General'}</span>
-                </td>
-                <td class="py-3 px-3 text-right font-black text-slate-900 text-sm">
-                    KSh ${parseFloat(item.selling_price || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
-                </td>
-                <td class="py-3 px-3 text-center">
-                    ${stockBadge}
-                </td>
-                <td class="py-3 px-3 text-center">
-                    <button class="btn-add-item px-3 py-1.5 bg-orange-600 hover:bg-orange-700 active:bg-orange-800 text-white font-bold rounded-lg text-xs transition shadow-sm" data-id="${item.id}">
-                        + Add
+            <div class="product-row p-3 hover:bg-orange-50/70 active:bg-orange-100/80 transition flex items-center justify-between gap-2.5 cursor-pointer select-none" data-id="${item.id}">
+                <div class="flex-1 min-w-0 pr-1">
+                    <div class="font-extrabold text-slate-900 text-sm leading-snug truncate">${item.name}</div>
+                    <div class="flex flex-wrap items-center gap-1.5 mt-1 text-[11px] text-slate-500 font-medium">
+                        <span class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-semibold text-[10px]">${item.category || 'General'}</span>
+                        <span>•</span>
+                        ${stockBadgeHtml}
+                        ${item.barcode ? `<span class="hidden sm:inline font-mono text-[10px] text-slate-400">#${item.barcode}</span>` : ''}
+                    </div>
+                </div>
+                <div class="flex items-center gap-2 flex-shrink-0">
+                    <div class="text-right">
+                        <div class="text-[9px] uppercase font-bold text-slate-400">Price</div>
+                        <div class="text-sm sm:text-base font-black text-slate-900">KSh ${formattedPrice}</div>
+                    </div>
+                    <button class="btn-add-item w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-orange-600 hover:bg-orange-500 active:bg-orange-700 text-white font-black text-lg flex items-center justify-center shadow-md shadow-orange-600/20 transition flex-shrink-0" data-id="${item.id}" title="Add to cart">
+                        +
                     </button>
-                </td>
-            </tr>
+                </div>
+            </div>
         `;
     }).join('');
 
-    // Attach click events
-    tbody.querySelectorAll('.product-row').forEach(row => {
+    // Attach click events: Tapping the row or clicking '+' adds item
+    container.querySelectorAll('.product-row').forEach(row => {
         row.addEventListener('click', (e) => {
-            // Avoid double trigger if add button clicked
             if (e.target.closest('.btn-add-item')) return;
             const id = row.dataset.id;
             const item = inventory.find(i => i.id === id);
@@ -138,7 +254,7 @@ function renderCatalog() {
         });
     });
 
-    tbody.querySelectorAll('.btn-add-item').forEach(btn => {
+    container.querySelectorAll('.btn-add-item').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
             const id = btn.dataset.id;
@@ -196,7 +312,6 @@ function handleBarcodeQuickAdd() {
 
     if (!code) return;
 
-    // Match by barcode, or name if barcode not found
     const match = inventory.find(i => 
         (i.barcode && i.barcode.toLowerCase() === code) || 
         i.name.toLowerCase() === code ||
@@ -214,7 +329,7 @@ function handleBarcodeQuickAdd() {
 }
 
 // ====================================================================
-// 2. CART MANAGEMENT (VEGAS POS LOGIC)
+// 2. CART MANAGEMENT (VEGAS POS LOGIC + MOBILE TOUCH CONTROLS)
 // ====================================================================
 function addToCart(product, qtyToAdd = 1) {
     const existingIndex = cart.findIndex(c => c.id === product.id);
@@ -238,6 +353,15 @@ function addToCart(product, qtyToAdd = 1) {
     }
 
     renderCart();
+
+    // Subtle feedback toast for quick mobile thumb tapping
+    if (isMobile()) {
+        const floatTotal = document.getElementById('floating-cart-total');
+        if (floatTotal) {
+            floatTotal.classList.add('scale-110');
+            setTimeout(() => floatTotal.classList.remove('scale-110'), 200);
+        }
+    }
 }
 
 function updateCartQty(productId, newQty) {
@@ -269,12 +393,18 @@ function clearCart() {
 document.getElementById('btn-clear-cart')?.addEventListener('click', clearCart);
 
 function renderCart() {
-    const tbody = document.getElementById('cart-tbody');
+    const container = document.getElementById('cart-items-container');
     const badge = document.getElementById('cart-item-count-badge');
     const subtotalEl = document.getElementById('lbl-subtotal');
     const grandTotalEl = document.getElementById('lbl-grand-total');
     const discountInput = document.getElementById('cart-discount');
     const discountValEl = document.getElementById('lbl-discount-val');
+
+    // Mobile floating cart elements
+    const floatingBar = document.getElementById('mobile-floating-cart-bar');
+    const floatingItems = document.getElementById('floating-cart-items');
+    const floatingTotal = document.getElementById('floating-cart-total');
+    const mobileCartBadge = document.getElementById('mobile-cart-badge');
 
     let totalItems = 0;
     let subtotal = 0;
@@ -287,50 +417,73 @@ function renderCart() {
     const discount = parseFloat(discountInput?.value || 0) || 0;
     const grandTotal = Math.max(0, subtotal - discount);
 
+    const formattedSubtotal = `KSh ${subtotal.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+    const formattedGrandTotal = `KSh ${grandTotal.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+
     if (badge) badge.textContent = `${totalItems} item${totalItems === 1 ? '' : 's'}`;
-    if (subtotalEl) subtotalEl.textContent = `KSh ${subtotal.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+    if (subtotalEl) subtotalEl.textContent = formattedSubtotal;
     if (discountValEl) discountValEl.textContent = `- KSh ${discount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
-    if (grandTotalEl) grandTotalEl.textContent = `KSh ${grandTotal.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+    if (grandTotalEl) grandTotalEl.textContent = formattedGrandTotal;
+
+    // Update Mobile Floating Cart Bar & Tab Badge
+    if (totalItems > 0) {
+        if (floatingBar && isMobile() && currentActiveView === 'products') {
+            floatingBar.classList.remove('hidden');
+        }
+        if (floatingItems) floatingItems.textContent = `${totalItems} item${totalItems === 1 ? '' : 's'} in cart`;
+        if (floatingTotal) floatingTotal.textContent = formattedGrandTotal;
+        if (mobileCartBadge) {
+            mobileCartBadge.textContent = totalItems;
+            mobileCartBadge.classList.remove('hidden');
+        }
+    } else {
+        if (floatingBar) floatingBar.classList.add('hidden');
+        if (mobileCartBadge) mobileCartBadge.classList.add('hidden');
+    }
+
+    if (!container) return;
 
     if (cart.length === 0) {
-        tbody.innerHTML = `
-            <tr>
-                <td colspan="5" class="py-16 text-center text-slate-400 font-medium">
-                    <div class="text-4xl mb-2">🛒</div>
-                    <div class="font-bold text-slate-600">Cart is empty</div>
-                    <div class="text-xs mt-1">Select products on the left or scan barcode</div>
-                </td>
-            </tr>`;
+        container.innerHTML = `
+            <div class="py-16 text-center text-slate-400 font-medium">
+                <div class="text-4xl mb-2">🛒</div>
+                <div class="font-bold text-slate-600">Cart is empty</div>
+                <div class="text-xs mt-1">Tap hardware items on catalog to add</div>
+            </div>`;
         return;
     }
 
-    tbody.innerHTML = cart.map(item => `
-        <tr class="hover:bg-slate-50 border-b border-slate-100">
-            <td class="py-2.5 px-2">
-                <div class="font-bold text-slate-800 text-xs leading-tight">${item.name}</div>
-                <div class="text-[10px] text-slate-400 font-medium">${item.category}</div>
-            </td>
-            <td class="py-2.5 px-2 text-center">
-                <div class="flex items-center justify-center gap-1">
-                    <button class="cart-qty-minus w-6 h-6 rounded bg-slate-200 hover:bg-slate-300 font-bold text-xs flex items-center justify-center transition" data-id="${item.id}">-</button>
-                    <input type="number" min="1" value="${item.qty}" class="cart-qty-input w-11 h-6 text-center border border-slate-300 rounded font-bold text-xs focus:ring-1 focus:ring-orange-500" data-id="${item.id}">
-                    <button class="cart-qty-plus w-6 h-6 rounded bg-slate-200 hover:bg-slate-300 font-bold text-xs flex items-center justify-center transition" data-id="${item.id}">+</button>
+    container.innerHTML = cart.map(item => `
+        <div class="cart-item-card p-3 rounded-2xl bg-white border border-slate-200 shadow-sm flex flex-col gap-2">
+            <div class="flex justify-between items-start gap-2">
+                <div class="flex-1 min-w-0">
+                    <h4 class="font-black text-slate-900 text-sm leading-snug truncate">${item.name}</h4>
+                    <div class="text-[11px] text-slate-500 font-medium">
+                        KSh ${item.selling_price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} each
+                    </div>
                 </div>
-            </td>
-            <td class="py-2.5 px-2 text-right text-xs font-semibold text-slate-600">
-                ${item.selling_price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
-            </td>
-            <td class="py-2.5 px-2 text-right text-xs font-black text-slate-900">
-                ${item.total.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
-            </td>
-            <td class="py-2.5 px-1 text-center">
-                <button class="cart-del-btn text-slate-400 hover:text-red-600 font-black text-base px-1 leading-none transition" data-id="${item.id}">&times;</button>
-            </td>
-        </tr>
+                <button class="cart-del-btn text-slate-400 hover:text-red-600 active:text-red-700 p-1.5 text-base font-black leading-none transition" data-id="${item.id}" title="Remove item">
+                    🗑️
+                </button>
+            </div>
+            <div class="flex justify-between items-center pt-2 border-t border-slate-100">
+                <!-- Large Touch Quantity Hitboxes (min 36x36px) -->
+                <div class="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
+                    <button class="cart-qty-minus w-8 h-8 rounded-lg bg-white active:bg-slate-200 text-slate-800 font-black text-base shadow-sm flex items-center justify-center transition" data-id="${item.id}">−</button>
+                    <input type="number" min="1" value="${item.qty}" class="cart-qty-input w-12 h-8 text-center bg-transparent font-black text-sm text-slate-900 focus:outline-none" data-id="${item.id}">
+                    <button class="cart-qty-plus w-8 h-8 rounded-lg bg-white active:bg-slate-200 text-slate-800 font-black text-base shadow-sm flex items-center justify-center transition" data-id="${item.id}">+</button>
+                </div>
+                <!-- Line Total -->
+                <div class="text-right">
+                    <div class="text-[9px] text-slate-400 font-bold uppercase">Total</div>
+                    <div class="text-base font-black text-slate-900">KSh ${item.total.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
+                </div>
+            </div>
+        </div>
     `).join('');
 
     // Attach Cart Action Listeners
-    tbody.querySelectorAll('.cart-qty-minus').forEach(btn => {
+    container.querySelectorAll('.cart-qty-minus').forEach(btn => {
         btn.addEventListener('click', () => {
             const id = btn.dataset.id;
             const itm = cart.find(c => c.id === id);
@@ -338,7 +491,7 @@ function renderCart() {
         });
     });
 
-    tbody.querySelectorAll('.cart-qty-plus').forEach(btn => {
+    container.querySelectorAll('.cart-qty-plus').forEach(btn => {
         btn.addEventListener('click', () => {
             const id = btn.dataset.id;
             const itm = cart.find(c => c.id === id);
@@ -346,7 +499,7 @@ function renderCart() {
         });
     });
 
-    tbody.querySelectorAll('.cart-qty-input').forEach(input => {
+    container.querySelectorAll('.cart-qty-input').forEach(input => {
         input.addEventListener('change', () => {
             const id = input.dataset.id;
             const val = parseInt(input.value) || 1;
@@ -354,7 +507,7 @@ function renderCart() {
         });
     });
 
-    tbody.querySelectorAll('.cart-del-btn').forEach(btn => {
+    container.querySelectorAll('.cart-del-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             removeCartItem(btn.dataset.id);
         });
@@ -480,7 +633,7 @@ function openCheckout() {
     setTimeout(() => {
         cashInput?.select();
         cashInput?.focus();
-    }, 100);
+    }, 150);
 }
 
 // Payment Method Selection Tabs
@@ -496,9 +649,9 @@ function selectPaymentMethod(method) {
     // Toggle button active states
     document.querySelectorAll('.pay-method-btn').forEach(btn => {
         if (btn.dataset.method === method) {
-            btn.className = "pay-method-btn active py-3 px-3 rounded-xl border-2 border-orange-600 bg-orange-50 text-orange-700 font-bold text-sm transition flex flex-col items-center gap-1 shadow-sm";
+            btn.className = "pay-method-btn active py-3 px-2 rounded-xl border-2 border-orange-600 bg-orange-50 text-orange-700 font-bold text-xs sm:text-sm transition flex flex-col items-center gap-1 shadow-sm";
         } else {
-            btn.className = "pay-method-btn py-3 px-3 rounded-xl border-2 border-slate-200 bg-white text-slate-600 font-bold text-sm hover:border-slate-300 transition flex flex-col items-center gap-1";
+            btn.className = "pay-method-btn py-3 px-2 rounded-xl border-2 border-slate-200 bg-white text-slate-600 font-bold text-xs sm:text-sm active:border-slate-300 transition flex flex-col items-center gap-1";
         }
     });
 
@@ -581,13 +734,13 @@ function calculateSplitBalance() {
 
     if (diff === 0) {
         remLabel.textContent = 'Exact Amount (Balanced)';
-        remLabel.className = 'text-lg font-black text-emerald-600';
+        remLabel.className = 'text-base font-black text-emerald-600';
     } else if (diff < 0) {
         remLabel.textContent = `Change: KSh ${Math.abs(diff).toFixed(2)}`;
-        remLabel.className = 'text-lg font-black text-emerald-600';
+        remLabel.className = 'text-base font-black text-emerald-600';
     } else {
         remLabel.textContent = `Still Due: KSh ${diff.toFixed(2)}`;
-        remLabel.className = 'text-lg font-black text-red-600';
+        remLabel.className = 'text-base font-black text-red-600';
     }
 }
 
@@ -660,7 +813,7 @@ document.getElementById('btn-save-quick-cust')?.addEventListener('click', async 
 });
 
 // ====================================================================
-// 5. SUBMIT FINAL SALE & RECEIPT GENERATION
+// 5. SUBMIT FINAL SALE & RECEIPT GENERATION (OPTIONAL VIA CHECKBOX)
 // ====================================================================
 btnSubmitFinalSale?.addEventListener('click', processFinalSale);
 
@@ -669,7 +822,7 @@ async function processFinalSale() {
     errBox.classList.add('hidden');
 
     const grandTotal = getCartGrandTotal();
-    const generateReceipt = document.getElementById('chk-generate-receipt')?.checked;
+    const generateReceipt = document.getElementById('chk-generate-receipt')?.checked === true;
 
     let customerId = null;
     let paymentRef = '';
@@ -716,7 +869,6 @@ async function processFinalSale() {
     const receiptNo = `LH-${new Date().toISOString().slice(2, 10).replace(/-/g, '')}-${Math.floor(1000 + Math.random() * 9000)}`;
 
     try {
-        // Construct sale log rows for each cart item
         const now = new Date().toISOString();
         const salesRows = cart.map(item => ({
             item_id: item.id,
@@ -747,22 +899,26 @@ async function processFinalSale() {
             await supabase.from('customers').update({ outstanding_debt: newBal }).eq('id', customerId);
         }
 
-        // Generate PDF Receipt ONLY if checkbox is checked
+        // Generate PDF Receipt ONLY if user explicitly checked the box
         if (generateReceipt) {
             generateReceiptPDF(receiptNo, cart, grandTotal, activePaymentMethod, tenderAmt, changeAmt, customerId);
         }
 
         // Reset cart and checkout modal
-        const completedCart = [...cart];
         cart = [];
         renderCart();
         checkoutModal.classList.add('hidden');
+
+        // On mobile, automatically return to products catalog for the next customer
+        if (isMobile()) {
+            switchView('products');
+        }
 
         // Refresh live inventory & today's sales
         await loadInventory();
         await loadTodaysSales();
 
-        // Flash toast notification
+        // Toast notification
         showToast(`Sale recorded successfully! Ref: ${receiptNo}`);
 
     } catch (err) {
@@ -771,13 +927,13 @@ async function processFinalSale() {
         errBox.classList.remove('hidden');
     } finally {
         btnSubmitFinalSale.disabled = false;
-        btnSubmitFinalSale.innerHTML = '✓ COMPLETE SALE (Enter)';
+        btnSubmitFinalSale.innerHTML = '✓ COMPLETE SALE';
     }
 }
 
 function showToast(msg) {
     const toast = document.createElement('div');
-    toast.className = "fixed bottom-5 right-5 z-[100] bg-slate-900 text-white px-5 py-3 rounded-2xl shadow-2xl border border-slate-700 flex items-center gap-2 text-sm font-bold animate-bounce";
+    toast.className = "fixed bottom-5 right-5 z-[100] bg-slate-900 text-white px-5 py-3 rounded-2xl shadow-2xl border border-slate-700 flex items-center gap-2 text-sm font-bold transition-transform duration-300";
     toast.innerHTML = `<span>✅</span> <span>${msg}</span>`;
     document.body.appendChild(toast);
     setTimeout(() => toast.remove(), 4000);
@@ -787,6 +943,10 @@ function showToast(msg) {
 // 6. RECEIPT GENERATION (PDF - Conditional On Checkbox)
 // ====================================================================
 function generateReceiptPDF(receiptNo, items, grandTotal, method, tendered, change, customerId) {
+    if (!window.jspdf) {
+        console.warn('jsPDF library not available');
+        return;
+    }
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({
         orientation: 'portrait',
@@ -809,7 +969,7 @@ function generateReceiptPDF(receiptNo, items, grandTotal, method, tendered, chan
 
     doc.text(`Receipt: ${receiptNo}`, 4, 27);
     doc.text(`Date: ${new Date().toLocaleString()}`, 4, 31);
-    doc.text(`Cashier: ${currentUser ? currentUser.username : 'Staff'}`, 4, 35);
+    doc.text(`Cashier: ${currentUser ? (currentUser.full_name || currentUser.username) : 'Staff'}`, 4, 35);
     if (cust) {
         doc.text(`Customer: ${cust.name}`, 4, 39);
     }
@@ -840,7 +1000,7 @@ function generateReceiptPDF(receiptNo, items, grandTotal, method, tendered, chan
         margin: { left: 4, right: 4 }
     });
 
-    const finalY = doc.lastAutoTable.finalY + 3;
+    const finalY = (doc.lastAutoTable?.finalY || 60) + 3;
 
     doc.setFont("helvetica", "bold");
     doc.setFontSize(10);
@@ -865,14 +1025,6 @@ function generateReceiptPDF(receiptNo, items, grandTotal, method, tendered, chan
 // ====================================================================
 // 7. TODAY'S SALES LEDGER (Per User & Store-wide)
 // ====================================================================
-const modalLedger = document.getElementById('modal-ledger');
-document.getElementById('btn-toggle-ledger')?.addEventListener('click', () => {
-    loadTodaysSales();
-    modalLedger.classList.remove('hidden');
-});
-document.getElementById('btn-close-ledger')?.addEventListener('click', () => {
-    modalLedger.classList.add('hidden');
-});
 document.getElementById('ledger-user-filter')?.addEventListener('change', renderTodaysLedger);
 
 async function loadTodaysSales() {
@@ -894,7 +1046,7 @@ async function loadTodaysSales() {
 
 function renderTodaysLedger() {
     const filter = document.getElementById('ledger-user-filter')?.value || 'my';
-    const tbody = document.getElementById('ledger-tbody');
+    const container = document.getElementById('ledger-records-container');
 
     let list = todaysSales;
 
@@ -915,42 +1067,81 @@ function renderTodaysLedger() {
         }
     });
 
-    document.getElementById('kpi-ledger-total').textContent = `KSh ${total.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
-    document.getElementById('kpi-ledger-cash').textContent = `KSh ${cash.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
-    document.getElementById('kpi-ledger-mpesa').textContent = `KSh ${mpesa.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
-    document.getElementById('kpi-ledger-debt').textContent = `KSh ${debt.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
-    document.getElementById('kpi-ledger-count').textContent = list.length;
+    const kpiTotal = document.getElementById('kpi-ledger-total');
+    const kpiCash = document.getElementById('kpi-ledger-cash');
+    const kpiMpesa = document.getElementById('kpi-ledger-mpesa');
+    const kpiDebt = document.getElementById('kpi-ledger-debt');
+    const kpiCount = document.getElementById('kpi-ledger-count');
+
+    if (kpiTotal) kpiTotal.textContent = `KSh ${total.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+    if (kpiCash) kpiCash.textContent = `KSh ${cash.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+    if (kpiMpesa) kpiMpesa.textContent = `KSh ${mpesa.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+    if (kpiDebt) kpiDebt.textContent = `KSh ${debt.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+    if (kpiCount) kpiCount.textContent = `${list.length} sale${list.length === 1 ? '' : 's'}`;
+
+    if (!container) return;
 
     if (list.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="8" class="py-12 text-center text-slate-400 font-medium">No sales recorded today for this view.</td></tr>`;
+        container.innerHTML = `
+            <div class="py-16 text-center text-slate-400 font-medium">
+                <div class="text-4xl mb-2">📋</div>
+                <div class="font-bold text-slate-600">No sales recorded today</div>
+                <div class="text-xs text-slate-400 mt-1">${filter === 'my' ? 'No transactions logged under your cashier account yet.' : 'No transactions recorded across all registers today.'}</div>
+            </div>`;
         return;
     }
 
-    tbody.innerHTML = list.map(s => {
+    container.innerHTML = list.map(s => {
         const time = new Date(s.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        const itemName = s.inventory?.name || 'Item';
-        const cashierName = s.users?.username || 'Staff';
-        const statusBadge = s.is_voided 
-            ? '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700">VOIDED</span>'
-            : `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">${s.payment_method}</span>`;
+        const itemName = s.inventory?.name || s.notes || 'Hardware Item';
+        const cashierName = s.users?.full_name || s.users?.username || 'Staff';
+        
+        let statusBadge = '';
+        if (s.is_voided) {
+            statusBadge = '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700">VOIDED</span>';
+        } else {
+            statusBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">${s.payment_method}</span>`;
+        }
 
         return `
-            <tr class="hover:bg-slate-50 border-b border-slate-100 ${s.is_voided ? 'opacity-50 line-through' : ''}">
-                <td class="py-2.5 px-3 font-mono text-slate-500">${time}</td>
-                <td class="py-2.5 px-3 font-mono font-bold text-slate-700">${s.receipt_no || '-'}</td>
-                <td class="py-2.5 px-3 font-bold text-slate-900">${itemName}</td>
-                <td class="py-2.5 px-3 text-center font-bold">${s.calculated_qty}</td>
-                <td class="py-2.5 px-3 text-right font-black text-slate-900">KSh ${parseFloat(s.total_charged || 0).toLocaleString()}</td>
-                <td class="py-2.5 px-3">${statusBadge}</td>
-                <td class="py-2.5 px-3 font-semibold text-slate-600 capitalize">${cashierName}</td>
-                <td class="py-2.5 px-3 text-center">
-                    ${!s.is_voided ? `<button class="btn-void-sale text-red-600 hover:text-red-800 font-bold text-xs" data-id="${s.id}">Void</button>` : '-'}
-                </td>
-            </tr>
+            <div class="p-3 bg-white border border-slate-200 rounded-xl shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 transition ${s.is_voided ? 'opacity-60 bg-slate-50' : 'hover:border-slate-300'}">
+                <div class="flex items-center gap-3 min-w-0">
+                    <div class="w-10 h-10 rounded-xl ${s.is_voided ? 'bg-red-100 text-red-600' : 'bg-orange-100 text-orange-700'} font-black flex items-center justify-center text-base flex-shrink-0">
+                        ${s.is_voided ? '✕' : '🛒'}
+                    </div>
+                    <div class="min-w-0 flex-1">
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <span class="font-black text-slate-900 text-sm truncate ${s.is_voided ? 'line-through text-slate-400' : ''}">${itemName}</span>
+                            ${statusBadge}
+                        </div>
+                        <div class="text-xs text-slate-500 mt-0.5 flex flex-wrap items-center gap-2">
+                            <span>Qty: <b class="text-slate-700">${s.calculated_qty}</b></span>
+                            <span>•</span>
+                            <span class="font-mono text-[11px] text-slate-600">${time}</span>
+                            <span>•</span>
+                            <span class="capitalize text-slate-600">by ${cashierName}</span>
+                            ${s.receipt_no ? `<span>•</span><span class="font-mono text-[11px] text-slate-400">#${s.receipt_no}</span>` : ''}
+                        </div>
+                    </div>
+                </div>
+                <div class="flex items-center justify-between sm:justify-end gap-3 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100">
+                    <div class="text-right">
+                        <div class="text-[9px] text-slate-400 font-bold uppercase">${s.payment_method}</div>
+                        <div class="text-base font-black ${s.is_voided ? 'line-through text-slate-400' : 'text-slate-900'}">
+                            KSh ${parseFloat(s.total_charged || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                        </div>
+                    </div>
+                    ${!s.is_voided ? `
+                        <button class="btn-void-sale px-3 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 active:bg-red-200 text-red-600 font-bold text-xs transition" data-id="${s.id}">
+                            Void
+                        </button>
+                    ` : '<span class="text-xs font-bold text-red-500 px-2 py-1 bg-red-50 rounded">Voided</span>'}
+                </div>
+            </div>
         `;
     }).join('');
 
-    tbody.querySelectorAll('.btn-void-sale').forEach(btn => {
+    container.querySelectorAll('.btn-void-sale').forEach(btn => {
         btn.addEventListener('click', async () => {
             const id = btn.dataset.id;
             if (!confirm('Are you sure you want to VOID this transaction? Stock will be automatically restored.')) return;
@@ -975,9 +1166,14 @@ function renderTodaysLedger() {
 // 8. DEBT COLLECTION MODAL
 // ====================================================================
 const modalDebt = document.getElementById('modal-debt');
+
 document.getElementById('btn-open-debt-modal')?.addEventListener('click', () => {
     loadCustomersDropdown();
-    modalDebt.classList.remove('hidden');
+    modalDebt?.classList.remove('hidden');
+});
+document.getElementById('btn-collect-debt-from-ledger')?.addEventListener('click', () => {
+    loadCustomersDropdown();
+    modalDebt?.classList.remove('hidden');
 });
 
 document.getElementById('collect-debt-cust-select')?.addEventListener('change', (e) => {
@@ -1024,7 +1220,7 @@ document.getElementById('btn-submit-debt-collect')?.addEventListener('click', as
         await supabase.from('customers').update({ outstanding_debt: newDebt }).eq('id', custId);
 
         alert(`Payment of KSh ${amount.toFixed(2)} recorded! New Balance: KSh ${newDebt.toFixed(2)}`);
-        modalDebt.classList.add('hidden');
+        modalDebt?.classList.add('hidden');
         document.getElementById('collect-debt-amount').value = '';
         await loadCustomersDropdown();
         await loadTodaysSales();
@@ -1048,6 +1244,7 @@ document.addEventListener('keydown', (e) => {
     // F3: Focus Search Bar
     else if (e.key === 'F3') {
         e.preventDefault();
+        if (currentActiveView !== 'products') switchView('products');
         searchInput?.focus();
         searchInput?.select();
     }
@@ -1060,8 +1257,7 @@ document.addEventListener('keydown', (e) => {
         });
     }
     // Enter in Checkout modal
-    else if (e.key === 'Enter' && !checkoutModal.classList.contains('hidden') && e.target.tagName !== 'BUTTON') {
-        // If not in a textarea/multiline, submit sale
+    else if (e.key === 'Enter' && checkoutModal && !checkoutModal.classList.contains('hidden') && e.target.tagName !== 'BUTTON') {
         if (e.target.id === 'cash-tendered-input' || e.target.id === 'mpesa-code-input' || e.target.id === 'split-cash-input' || e.target.id === 'split-mpesa-input') {
             e.preventDefault();
             processFinalSale();
@@ -1072,6 +1268,7 @@ document.addEventListener('keydown', (e) => {
 // ====================================================================
 // INITIALIZATION
 // ====================================================================
+switchView('products');
 loadInventory();
 loadCustomersDropdown();
 loadTodaysSales();
