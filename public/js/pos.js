@@ -206,13 +206,13 @@ function renderCatalog() {
         const isOutOfStock = !item.is_service && item.stock_quantity <= 0;
 
         if (item.is_service) {
-            stockBadgeHtml = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-600">Service</span>`;
+            stockBadgeHtml = `<span class="px-2 py-0.5 rounded-lg text-xs font-bold bg-slate-100 text-slate-700">Service</span>`;
         } else if (isOutOfStock) {
-            stockBadgeHtml = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700">Out of Stock</span>`;
+            stockBadgeHtml = `<span class="px-2 py-0.5 rounded-lg text-xs font-bold bg-red-100 text-red-700">Out of Stock</span>`;
         } else if (item.stock_quantity <= (item.min_threshold || 10)) {
-            stockBadgeHtml = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800">${item.stock_quantity} left</span>`;
+            stockBadgeHtml = `<span class="px-2 py-0.5 rounded-lg text-xs font-bold bg-amber-100 text-amber-800">${item.stock_quantity} left</span>`;
         } else {
-            stockBadgeHtml = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">${item.stock_quantity} in stock</span>`;
+            stockBadgeHtml = `<span class="px-2 py-0.5 rounded-lg text-xs font-bold bg-emerald-100 text-emerald-800">${item.stock_quantity} in stock</span>`;
         }
 
         const formattedPrice = parseFloat(item.selling_price || 0).toLocaleString(undefined, {
@@ -221,22 +221,22 @@ function renderCatalog() {
         });
 
         return `
-            <div class="product-row p-3 hover:bg-orange-50/70 active:bg-orange-100/80 transition flex items-center justify-between gap-2.5 cursor-pointer select-none" data-id="${item.id}">
+            <div class="product-row p-3 sm:p-3.5 hover:bg-orange-50/70 active:bg-orange-100/80 transition flex items-center justify-between gap-3 cursor-pointer select-none" data-id="${item.id}">
                 <div class="flex-1 min-w-0 pr-1">
-                    <div class="font-extrabold text-slate-900 text-sm leading-snug truncate">${item.name}</div>
-                    <div class="flex flex-wrap items-center gap-1.5 mt-1 text-[11px] text-slate-500 font-medium">
-                        <span class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-semibold text-[10px]">${item.category || 'General'}</span>
+                    <div class="font-black text-slate-900 text-base sm:text-lg leading-snug truncate">${item.name}</div>
+                    <div class="flex flex-wrap items-center gap-2 mt-1 text-xs text-slate-600 font-medium">
+                        <span class="px-2 py-0.5 rounded-lg bg-slate-100 text-slate-700 font-bold text-xs">${item.category || 'General'}</span>
                         <span>•</span>
                         ${stockBadgeHtml}
-                        ${item.barcode ? `<span class="hidden sm:inline font-mono text-[10px] text-slate-400">#${item.barcode}</span>` : ''}
+                        ${item.barcode ? `<span class="hidden sm:inline font-mono text-xs text-slate-500 font-semibold">#${item.barcode}</span>` : ''}
                     </div>
                 </div>
-                <div class="flex items-center gap-2 flex-shrink-0">
+                <div class="flex items-center gap-2.5 flex-shrink-0">
                     <div class="text-right">
-                        <div class="text-[9px] uppercase font-bold text-slate-400">Price</div>
-                        <div class="text-sm sm:text-base font-black text-slate-900">KSh ${formattedPrice}</div>
+                        <div class="text-[10px] sm:text-xs uppercase font-bold text-slate-400">Price</div>
+                        <div class="text-base sm:text-lg font-black text-slate-900">KSh ${formattedPrice}</div>
                     </div>
-                    <button class="btn-add-item w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-orange-600 hover:bg-orange-500 active:bg-orange-700 text-white font-black text-lg flex items-center justify-center shadow-md shadow-orange-600/20 transition flex-shrink-0" data-id="${item.id}" title="Add to cart">
+                    <button class="btn-add-item w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-orange-600 hover:bg-orange-500 active:bg-orange-700 text-white font-black text-xl flex items-center justify-center shadow-md shadow-orange-600/20 transition flex-shrink-0" data-id="${item.id}" title="Add to cart">
                         +
                     </button>
                 </div>
@@ -454,29 +454,29 @@ function renderCart() {
     }
 
     container.innerHTML = cart.map(item => `
-        <div class="cart-item-card p-3 rounded-2xl bg-white border border-slate-200 shadow-sm flex flex-col gap-2">
+        <div class="cart-item-card p-3 sm:p-3.5 rounded-2xl bg-white border border-slate-200 shadow-sm flex flex-col gap-2.5">
             <div class="flex justify-between items-start gap-2">
                 <div class="flex-1 min-w-0">
-                    <h4 class="font-black text-slate-900 text-sm leading-snug truncate">${item.name}</h4>
-                    <div class="text-[11px] text-slate-500 font-medium">
+                    <h4 class="font-black text-slate-900 text-base leading-snug truncate">${item.name}</h4>
+                    <div class="text-xs sm:text-sm text-slate-600 font-semibold mt-0.5">
                         KSh ${item.selling_price.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} each
                     </div>
                 </div>
-                <button class="cart-del-btn text-slate-400 hover:text-red-600 active:text-red-700 p-1.5 text-base font-black leading-none transition" data-id="${item.id}" title="Remove item">
+                <button class="cart-del-btn text-slate-400 hover:text-red-600 active:text-red-700 p-2 text-lg font-black leading-none transition" data-id="${item.id}" title="Remove item">
                     🗑️
                 </button>
             </div>
-            <div class="flex justify-between items-center pt-2 border-t border-slate-100">
-                <!-- Large Touch Quantity Hitboxes (min 36x36px) -->
-                <div class="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
-                    <button class="cart-qty-minus w-8 h-8 rounded-lg bg-white active:bg-slate-200 text-slate-800 font-black text-base shadow-sm flex items-center justify-center transition" data-id="${item.id}">−</button>
-                    <input type="number" min="1" value="${item.qty}" class="cart-qty-input w-12 h-8 text-center bg-transparent font-black text-sm text-slate-900 focus:outline-none" data-id="${item.id}">
-                    <button class="cart-qty-plus w-8 h-8 rounded-lg bg-white active:bg-slate-200 text-slate-800 font-black text-base shadow-sm flex items-center justify-center transition" data-id="${item.id}">+</button>
+            <div class="flex justify-between items-center pt-2.5 border-t border-slate-100">
+                <!-- Large Touch Quantity Hitboxes (min 38x38px) -->
+                <div class="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
+                    <button class="cart-qty-minus w-9 h-9 sm:w-10 sm:h-10 rounded-lg bg-white active:bg-slate-200 text-slate-900 font-black text-lg shadow-sm flex items-center justify-center transition" data-id="${item.id}">−</button>
+                    <input type="number" min="1" value="${item.qty}" class="cart-qty-input w-14 h-9 sm:h-10 text-center bg-transparent font-black text-base text-slate-900 focus:outline-none" data-id="${item.id}">
+                    <button class="cart-qty-plus w-9 h-9 sm:w-10 sm:h-10 rounded-lg bg-white active:bg-slate-200 text-slate-900 font-black text-lg shadow-sm flex items-center justify-center transition" data-id="${item.id}">+</button>
                 </div>
                 <!-- Line Total -->
                 <div class="text-right">
-                    <div class="text-[9px] text-slate-400 font-bold uppercase">Total</div>
-                    <div class="text-base font-black text-slate-900">KSh ${item.total.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
+                    <div class="text-[10px] sm:text-xs text-slate-400 font-bold uppercase">Total</div>
+                    <div class="text-base sm:text-lg font-black text-slate-900">KSh ${item.total.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
                 </div>
             </div>
         </div>
@@ -1098,44 +1098,44 @@ function renderTodaysLedger() {
         
         let statusBadge = '';
         if (s.is_voided) {
-            statusBadge = '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700">VOIDED</span>';
+            statusBadge = '<span class="px-2.5 py-1 rounded-lg text-xs font-bold bg-red-100 text-red-700">VOIDED</span>';
         } else {
-            statusBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">${s.payment_method}</span>`;
+            statusBadge = `<span class="px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-100 text-emerald-800">${s.payment_method}</span>`;
         }
 
         return `
-            <div class="p-3 bg-white border border-slate-200 rounded-xl shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 transition ${s.is_voided ? 'opacity-60 bg-slate-50' : 'hover:border-slate-300'}">
+            <div class="p-3 sm:p-3.5 bg-white border border-slate-200 rounded-xl shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition ${s.is_voided ? 'opacity-60 bg-slate-50' : 'hover:border-slate-300'}">
                 <div class="flex items-center gap-3 min-w-0">
-                    <div class="w-10 h-10 rounded-xl ${s.is_voided ? 'bg-red-100 text-red-600' : 'bg-orange-100 text-orange-700'} font-black flex items-center justify-center text-base flex-shrink-0">
+                    <div class="w-11 h-11 rounded-xl ${s.is_voided ? 'bg-red-100 text-red-600' : 'bg-orange-100 text-orange-700'} font-black flex items-center justify-center text-lg flex-shrink-0">
                         ${s.is_voided ? '✕' : '🛒'}
                     </div>
                     <div class="min-w-0 flex-1">
                         <div class="flex items-center gap-2 flex-wrap">
-                            <span class="font-black text-slate-900 text-sm truncate ${s.is_voided ? 'line-through text-slate-400' : ''}">${itemName}</span>
+                            <span class="font-black text-slate-900 text-base truncate ${s.is_voided ? 'line-through text-slate-400' : ''}">${itemName}</span>
                             ${statusBadge}
                         </div>
-                        <div class="text-xs text-slate-500 mt-0.5 flex flex-wrap items-center gap-2">
-                            <span>Qty: <b class="text-slate-700">${s.calculated_qty}</b></span>
+                        <div class="text-xs sm:text-sm text-slate-600 mt-1 flex flex-wrap items-center gap-2 font-medium">
+                            <span>Qty: <b class="text-slate-800">${s.calculated_qty}</b></span>
                             <span>•</span>
-                            <span class="font-mono text-[11px] text-slate-600">${time}</span>
+                            <span class="font-mono text-xs text-slate-700 font-semibold">${time}</span>
                             <span>•</span>
-                            <span class="capitalize text-slate-600">by ${cashierName}</span>
-                            ${s.receipt_no ? `<span>•</span><span class="font-mono text-[11px] text-slate-400">#${s.receipt_no}</span>` : ''}
+                            <span class="capitalize text-slate-700 font-semibold">by ${cashierName}</span>
+                            ${s.receipt_no ? `<span>•</span><span class="font-mono text-xs text-slate-400">#${s.receipt_no}</span>` : ''}
                         </div>
                     </div>
                 </div>
                 <div class="flex items-center justify-between sm:justify-end gap-3 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100">
                     <div class="text-right">
-                        <div class="text-[9px] text-slate-400 font-bold uppercase">${s.payment_method}</div>
-                        <div class="text-base font-black ${s.is_voided ? 'line-through text-slate-400' : 'text-slate-900'}">
+                        <div class="text-[10px] sm:text-xs text-slate-400 font-bold uppercase">${s.payment_method}</div>
+                        <div class="text-base sm:text-lg font-black ${s.is_voided ? 'line-through text-slate-400' : 'text-slate-900'}">
                             KSh ${parseFloat(s.total_charged || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
                         </div>
                     </div>
                     ${!s.is_voided ? `
-                        <button class="btn-void-sale px-3 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 active:bg-red-200 text-red-600 font-bold text-xs transition" data-id="${s.id}">
+                        <button class="btn-void-sale px-3 py-1.5 rounded-xl bg-red-50 hover:bg-red-100 active:bg-red-200 text-red-600 font-bold text-xs sm:text-sm transition" data-id="${s.id}">
                             Void
                         </button>
-                    ` : '<span class="text-xs font-bold text-red-500 px-2 py-1 bg-red-50 rounded">Voided</span>'}
+                    ` : '<span class="text-xs sm:text-sm font-bold text-red-500 px-2.5 py-1 bg-red-50 rounded-lg">Voided</span>'}
                 </div>
             </div>
         `;
