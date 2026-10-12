@@ -38,6 +38,18 @@ window.addEventListener('online', () => {
 window.addEventListener('offline', updateConnectionStatus);
 updateConnectionStatus();
 
+// Dynamic Viewport Height Handler (Fixes Samsung A03 & Android URL/System Navigation bar shifts)
+function updateAppHeight() {
+    const height = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+    document.documentElement.style.setProperty('--app-height', `${height}px`);
+}
+window.addEventListener('resize', updateAppHeight);
+window.addEventListener('orientationchange', updateAppHeight);
+if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', updateAppHeight);
+}
+updateAppHeight();
+
 // ====================================================================
 // MOBILE-FIRST RESPONSIVE VIEW SWITCHER
 // ====================================================================
@@ -942,9 +954,33 @@ async function processFinalSale() {
             await supabase.from('customers').update({ outstanding_debt: newBal }).eq('id', customerId);
         }
 
-        // Generate PDF Receipt ONLY if user explicitly checked the box
-        if (generateReceipt) {
-            generateReceiptPDF(receiptNo, cart, grandTotal, activePaymentMethod, tenderAmt, changeAmt, customerId);
+        const sendWhatsApp = document.getElementById('chk-whatsapp-receipt')?.checked === true;
+        let waPhone = document.getElementById('whatsapp-phone-input')?.value.trim();
+        const cust = customers.find(c => c.id === customerId);
+        if (!waPhone && cust?.phone) {
+            waPhone = cust.phone;
+        }
+
+        // Generate PDF Doc if receipt printing OR WhatsApp sharing is requested
+        let pdfDoc = null;
+        if (generateReceipt || sendWhatsApp) {
+            pdfDoc = buildReceiptPDFDoc(receiptNo, cart, grandTotal, activePaymentMethod, tenderAmt, changeAmt, customerId);
+        }
+
+        if (generateReceipt && pdfDoc) {
+            pdfDoc.save(`Receipt_${receiptNo}.pdf`);
+        }
+
+        if (sendWhatsApp) {
+            await shareReceiptViaWhatsApp({
+                doc: pdfDoc,
+                receiptNo,
+                items: [...cart],
+                grandTotal,
+                method: activePaymentMethod,
+                phone: waPhone,
+                customerName: cust ? cust.name : null
+            });
         }
 
         // Reset cart and checkout modal
@@ -974,6 +1010,30 @@ async function processFinalSale() {
     }
 }
 
+// WhatsApp Checkbox and Customer Phone Auto-fill
+document.getElementById('chk-whatsapp-receipt')?.addEventListener('change', (e) => {
+    const box = document.getElementById('whatsapp-phone-container');
+    if (e.target.checked) {
+        box?.classList.remove('hidden');
+        const custId = document.getElementById('debt-customer-dropdown')?.value;
+        const cust = customers.find(c => c.id === custId);
+        const phoneInput = document.getElementById('whatsapp-phone-input');
+        if (cust?.phone && phoneInput && !phoneInput.value) {
+            phoneInput.value = cust.phone;
+        }
+    } else {
+        box?.classList.add('hidden');
+    }
+});
+
+document.getElementById('debt-customer-dropdown')?.addEventListener('change', (e) => {
+    const cust = customers.find(c => c.id === e.target.value);
+    const phoneInput = document.getElementById('whatsapp-phone-input');
+    if (cust?.phone && phoneInput) {
+        phoneInput.value = cust.phone;
+    }
+});
+
 function showToast(msg) {
     const toast = document.createElement('div');
     toast.className = "fixed bottom-5 right-5 z-[100] bg-slate-900 text-white px-5 py-3 rounded-2xl shadow-2xl border border-slate-700 flex items-center gap-2 text-sm font-bold transition-transform duration-300";
@@ -983,12 +1043,12 @@ function showToast(msg) {
 }
 
 // ====================================================================
-// 6. RECEIPT GENERATION (PDF - Conditional On Checkbox)
+// 6. RECEIPT GENERATION & WHATSAPP SHARING
 // ====================================================================
-function generateReceiptPDF(receiptNo, items, grandTotal, method, tendered, change, customerId) {
+function buildReceiptPDFDoc(receiptNo, items, grandTotal, method, tendered, change, customerId) {
     if (!window.jspdf) {
         console.warn('jsPDF library not available');
-        return;
+        return null;
     }
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({
@@ -1025,8 +1085,8 @@ function generateReceiptPDF(receiptNo, items, grandTotal, method, tendered, chan
     const tableData = items.map(i => [
         i.name,
         i.qty.toString(),
-        i.selling_price.toFixed(0),
-        i.total.toFixed(0)
+        parseFloat(i.selling_price || 0).toFixed(0),
+        parseFloat(i.total || (i.selling_price * i.qty)).toFixed(0)
     ]);
 
     doc.autoTable({
@@ -1069,7 +1129,63 @@ function generateReceiptPDF(receiptNo, items, grandTotal, method, tendered, chan
         doc.text(line, 40, finalY + 26 + (idx * 3.5), { align: "center" });
     });
 
-    doc.save(`Receipt_${receiptNo}.pdf`);
+    return doc;
+}
+
+function generateReceiptPDF(receiptNo, items, grandTotal, method, tendered, change, customerId) {
+    const doc = buildReceiptPDFDoc(receiptNo, items, grandTotal, method, tendered, change, customerId);
+    if (doc) doc.save(`Receipt_${receiptNo}.pdf`);
+}
+
+async function shareReceiptViaWhatsApp({ doc, receiptNo, items, grandTotal, method, phone, customerName }) {
+    const storeName = storeSettings.store_name || "LITAJ HARDWARE";
+    const storePhone = storeSettings.store_phone || "";
+    
+    let itemsList = items.map(i => `• ${i.qty}x ${i.name} - KSh ${parseFloat(i.total || (i.selling_price * i.qty)).toLocaleString()}`).join('\n');
+    
+    const message = 
+`🧾 *${storeName.toUpperCase()} - RECEIPT*
+Ref: #${receiptNo}
+Date: ${new Date().toLocaleString()}
+${customerName ? `Customer: ${customerName}\n` : ''}--------------------------------
+${itemsList}
+--------------------------------
+*TOTAL: KSh ${grandTotal.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}*
+Paid via: ${method}
+--------------------------------
+Thank you for building with ${storeName}!
+${storePhone ? `Inquiries: ${storePhone}` : ''}`;
+
+    // 1. Native Web Share API with PDF file attachment (Standard on Android Chrome / Samsung A03 / iOS)
+    if (doc && navigator.canShare) {
+        try {
+            const pdfBlob = doc.output('blob');
+            const pdfFile = new File([pdfBlob], `Receipt_${receiptNo}.pdf`, { type: 'application/pdf' });
+            if (navigator.canShare({ files: [pdfFile] })) {
+                await navigator.share({
+                    files: [pdfFile],
+                    title: `Receipt #${receiptNo}`,
+                    text: message
+                });
+                return true;
+            }
+        } catch (err) {
+            if (err.name === 'AbortError') return false; // user dismissed share dialog
+            console.warn('Native share failed, falling back to wa.me URL:', err);
+        }
+    }
+
+    // 2. Direct wa.me WhatsApp URL fallback
+    let cleanPhone = (phone || '').replace(/\D/g, '');
+    if (cleanPhone.startsWith('0')) cleanPhone = '254' + cleanPhone.slice(1);
+    else if ((cleanPhone.startsWith('7') || cleanPhone.startsWith('1')) && cleanPhone.length === 9) cleanPhone = '254' + cleanPhone;
+
+    const waUrl = cleanPhone 
+        ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`
+        : `https://wa.me/?text=${encodeURIComponent(message)}`;
+
+    window.open(waUrl, '_blank');
+    return true;
 }
 
 // ====================================================================
@@ -1182,14 +1298,52 @@ function renderTodaysLedger() {
                         </div>
                     </div>
                     ${!s.is_voided ? `
-                        <button class="btn-void-sale px-3 py-1.5 rounded-xl bg-red-50 hover:bg-red-100 active:bg-red-200 text-red-600 font-bold text-xs sm:text-sm transition" data-id="${s.id}">
-                            Void
-                        </button>
+                        <div class="flex items-center gap-1.5">
+                            <button class="btn-share-wa-sale px-2.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 active:bg-emerald-200 text-emerald-700 font-bold text-xs sm:text-sm transition flex items-center gap-1" data-id="${s.id}" title="Send Receipt on WhatsApp">
+                                💬 <span class="hidden sm:inline">WhatsApp</span>
+                            </button>
+                            <button class="btn-void-sale px-3 py-1.5 rounded-xl bg-red-50 hover:bg-red-100 active:bg-red-200 text-red-600 font-bold text-xs sm:text-sm transition" data-id="${s.id}">
+                                Void
+                            </button>
+                        </div>
                     ` : '<span class="text-xs sm:text-sm font-bold text-red-500 px-2.5 py-1 bg-red-50 rounded-lg">Voided</span>'}
                 </div>
             </div>
         `;
     }).join('');
+
+    container.querySelectorAll('.btn-share-wa-sale').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const id = btn.dataset.id;
+            const sale = todaysSales.find(s => s.id === id);
+            if (!sale) return;
+
+            const custName = sale.customers?.name || null;
+            const custPhone = sale.customers?.phone || '';
+            const phone = prompt(`Enter customer WhatsApp number for Receipt #${sale.receipt_no}:`, custPhone);
+            if (phone === null) return; // user cancelled
+
+            const grandTotal = parseFloat(sale.total_charged || 0);
+            const items = [{
+                name: sale.inventory?.name || sale.notes || 'Hardware Item',
+                qty: sale.calculated_qty || 1,
+                total: grandTotal,
+                selling_price: grandTotal / (sale.calculated_qty || 1)
+            }];
+
+            const doc = buildReceiptPDFDoc(sale.receipt_no, items, grandTotal, sale.payment_method, 0, 0, sale.customer_id);
+
+            await shareReceiptViaWhatsApp({
+                doc,
+                receiptNo: sale.receipt_no,
+                items,
+                grandTotal,
+                method: sale.payment_method,
+                phone,
+                customerName: custName
+            });
+        });
+    });
 
     container.querySelectorAll('.btn-void-sale').forEach(btn => {
         btn.addEventListener('click', async () => {

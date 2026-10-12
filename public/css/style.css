@@ -25,6 +25,14 @@
     --litaj-success: #10b981;
     --litaj-danger: #ef4444;
     --litaj-border: #e2e8f0;
+    --app-height: 100vh;
+    --safe-bottom: max(env(safe-area-inset-bottom, 0px), 8px);
+}
+
+@supports (height: 100dvh) {
+    :root {
+        --app-height: 100dvh;
+    }
 }
 
 *, *::before, *::after {

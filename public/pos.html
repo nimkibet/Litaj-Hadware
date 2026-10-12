@@ -27,6 +27,50 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
     <link rel="stylesheet" href="/css/style.css">
     <style>
+        /* Dynamic Viewport Height & Safe Area Fix for Samsung A03 and all mobile devices */
+        :root {
+            --app-height: 100vh;
+            --safe-bottom: max(env(safe-area-inset-bottom, 0px), 8px);
+        }
+        @supports (height: 100dvh) {
+            :root {
+                --app-height: 100dvh;
+            }
+        }
+        html, body {
+            height: 100%;
+            height: 100vh;
+            height: var(--app-height, 100dvh);
+            min-height: var(--app-height, 100dvh);
+            max-height: var(--app-height, 100dvh);
+        }
+
+        /* Fixed Mobile Navigation on Android & Small Viewports */
+        #mobile-bottom-nav {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            z-index: 50;
+            height: calc(58px + var(--safe-bottom, 8px));
+            padding-bottom: var(--safe-bottom, 8px);
+            background-color: #0f172a; /* slate-900 */
+            border-top: 1px solid #334155;
+            box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.45);
+        }
+        #mobile-floating-cart-bar {
+            position: fixed;
+            bottom: calc(66px + var(--safe-bottom, 8px));
+            left: 0.75rem;
+            right: 0.75rem;
+            z-index: 45;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+        }
+        @media (min-width: 1024px) {
+            #mobile-bottom-nav { display: none !important; }
+            #mobile-floating-cart-bar { display: none !important; }
+        }
+
         /* Touch optimization & font scaling to prevent auto-zoom on mobile and ensure high legibility */
         input, select, textarea, button {
             font-size: 16px;
@@ -36,14 +80,14 @@
             input, select, textarea, button { font-size: 15px; }
         }
         /* Mobile safe-area support */
-        .pb-safe { padding-bottom: max(env(safe-area-inset-bottom), 12px); }
-        .pt-safe { padding-top: max(env(safe-area-inset-top), 8px); }
+        .pb-safe { padding-bottom: max(env(safe-area-inset-bottom, 0px), 10px); }
+        .pt-safe { padding-top: max(env(safe-area-inset-top, 0px), 8px); }
         .product-card:active { transform: scale(0.98); background-color: #fff7ed; }
         ::-webkit-scrollbar { width: 5px; height: 5px; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
     </style>
 </head>
-<body class="bg-slate-100 h-screen flex flex-col font-sans text-slate-800 overflow-hidden select-none">
+<body class="bg-slate-100 flex flex-col font-sans text-slate-800 overflow-hidden select-none" style="height: 100vh; height: var(--app-height, 100dvh); max-height: var(--app-height, 100dvh);">
 
     <!-- ========================================================= -->
     <!-- TOP HEADER BAR (Mobile-Optimized)                          -->
@@ -101,7 +145,7 @@
     <!-- MAIN APPLICATION WORKSPACE                                -->
     <!-- Mobile: Tabbed Panels | Desktop: Side-by-Side 2 Columns    -->
     <!-- ========================================================= -->
-    <main class="flex-1 overflow-hidden relative flex flex-col lg:flex-row p-2 sm:p-3 gap-2 sm:gap-3">
+    <main class="flex-1 min-h-0 overflow-hidden relative flex flex-col lg:flex-row p-2 sm:p-3 gap-2 sm:gap-3 pb-[74px] lg:pb-3">
 
         <!-- ===================================================== -->
         <!-- PANEL 1: PRODUCTS / CATALOG / LIVE SEARCH             -->
@@ -325,23 +369,23 @@
     <!-- MOBILE BOTTOM NAVIGATION BAR (Sticky Thumb-Friendly Nav)   -->
     <!-- Visible on screens < lg (mobile phones & tablets)         -->
     <!-- ========================================================= -->
-    <nav class="lg:hidden bg-slate-900 border-t border-slate-800 flex items-center justify-around z-40 flex-shrink-0 pb-safe">
-        <button id="tab-btn-products" class="mobile-tab-btn active flex-1 py-2.5 flex flex-col items-center gap-1 text-orange-500 font-bold transition">
-            <span class="text-xl">🛍️</span>
-            <span class="text-xs font-bold">Catalog</span>
+    <nav id="mobile-bottom-nav" class="lg:hidden flex items-center justify-around flex-shrink-0">
+        <button id="tab-btn-products" class="mobile-tab-btn active flex-1 py-1.5 flex flex-col items-center justify-center gap-0.5 text-orange-500 font-bold transition active:bg-slate-800">
+            <span class="text-xl leading-none">🛍️</span>
+            <span class="text-[11px] sm:text-xs font-bold leading-tight">Catalog</span>
         </button>
-        <button id="tab-btn-cart" class="mobile-tab-btn flex-1 py-2.5 flex flex-col items-center gap-1 text-slate-400 font-bold transition relative">
-            <span class="text-xl">🛒</span>
-            <span class="text-xs font-bold">Cart</span>
-            <span id="mobile-cart-badge" class="hidden absolute top-1 right-6 w-5 h-5 rounded-full bg-orange-600 text-white text-xs font-black flex items-center justify-center">0</span>
+        <button id="tab-btn-cart" class="mobile-tab-btn flex-1 py-1.5 flex flex-col items-center justify-center gap-0.5 text-slate-400 font-bold transition relative active:bg-slate-800">
+            <span class="text-xl leading-none">🛒</span>
+            <span class="text-[11px] sm:text-xs font-bold leading-tight">Cart</span>
+            <span id="mobile-cart-badge" class="hidden absolute top-0.5 right-[calc(50%-22px)] w-5 h-5 rounded-full bg-orange-600 text-white text-[10px] font-black flex items-center justify-center shadow">0</span>
         </button>
-        <button id="tab-btn-ledger" class="mobile-tab-btn flex-1 py-2.5 flex flex-col items-center gap-1 text-slate-400 font-bold transition">
-            <span class="text-xl">📊</span>
-            <span class="text-xs font-bold">My Sales</span>
+        <button id="tab-btn-ledger" class="mobile-tab-btn flex-1 py-1.5 flex flex-col items-center justify-center gap-0.5 text-slate-400 font-bold transition active:bg-slate-800">
+            <span class="text-xl leading-none">📊</span>
+            <span class="text-[11px] sm:text-xs font-bold leading-tight">My Sales</span>
         </button>
-        <button id="tab-btn-debt" class="mobile-tab-btn flex-1 py-2.5 flex flex-col items-center gap-1 text-slate-400 font-bold transition">
-            <span class="text-xl">💳</span>
-            <span class="text-xs font-bold">Debts</span>
+        <button id="tab-btn-debt" class="mobile-tab-btn flex-1 py-1.5 flex flex-col items-center justify-center gap-0.5 text-slate-400 font-bold transition active:bg-slate-800">
+            <span class="text-xl leading-none">💳</span>
+            <span class="text-[11px] sm:text-xs font-bold leading-tight">Debts</span>
         </button>
     </nav>
 
@@ -464,7 +508,7 @@
                 </div>
 
                 <!-- OPTIONAL RECEIPT CHECKBOX (Default: Unchecked) -->
-                <div class="pt-2 border-t border-slate-100">
+                <div class="pt-2 border-t border-slate-100 space-y-2">
                     <label class="flex items-center gap-3.5 p-3.5 bg-slate-50 active:bg-slate-100 rounded-2xl border border-slate-200 cursor-pointer transition select-none">
                         <input type="checkbox" id="chk-generate-receipt" class="w-5 h-5 text-orange-600 rounded border-slate-300 focus:ring-orange-500">
                         <div class="flex-1">
@@ -472,6 +516,22 @@
                             <div class="text-xs sm:text-sm text-slate-500">Leave unchecked for instant sale completion</div>
                         </div>
                     </label>
+
+                    <!-- OPTIONAL WHATSAPP RECEIPT SHARE -->
+                    <label class="flex items-center gap-3.5 p-3.5 bg-emerald-50/70 active:bg-emerald-100/70 rounded-2xl border border-emerald-300 cursor-pointer transition select-none">
+                        <input type="checkbox" id="chk-whatsapp-receipt" class="w-5 h-5 text-emerald-600 rounded border-emerald-400 focus:ring-emerald-500">
+                        <div class="flex-1">
+                            <div class="text-sm sm:text-base font-black text-emerald-950 flex items-center gap-1.5">
+                                <span>💬 Send Receipt via WhatsApp</span>
+                                <span class="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-emerald-600 text-white">Direct</span>
+                            </div>
+                            <div class="text-xs sm:text-sm text-emerald-700 font-medium">Sends PDF receipt & itemized summary directly to customer</div>
+                        </div>
+                    </label>
+                    <div id="whatsapp-phone-container" class="hidden p-3 bg-emerald-50/40 rounded-xl border border-emerald-200 space-y-1">
+                        <label class="block text-xs font-bold text-emerald-900">Customer WhatsApp Phone:</label>
+                        <input type="tel" id="whatsapp-phone-input" placeholder="e.g. 0712 345 678 or 254712345678" class="w-full border-2 border-emerald-300 rounded-xl px-3.5 py-2.5 text-sm sm:text-base font-bold text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white">
+                    </div>
                 </div>
 
                 <div id="checkout-error-msg" class="hidden p-3 bg-red-50 border border-red-200 rounded-xl text-xs sm:text-sm font-bold text-red-600"></div>
