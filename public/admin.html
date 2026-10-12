@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Litaj Hardware — Admin Dashboard</title>
+    <meta name="supa-url" content="https://sbpncxjddwontoemkuye.supabase.co">
+    <meta name="supa-key" content="REPLACE_WITH_ANON_KEY">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+        * { font-family: 'Inter', sans-serif; }
+    </style>
+</head>
+<body class="bg-slate-100 min-h-screen">
+
+    <!-- Header Navigation -->
+    <header class="bg-gradient-to-r from-orange-600 to-orange-700 text-white shadow-lg">
+        <div class="max-w-screen-2xl mx-auto px-4 h-16 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <div class="w-9 h-9 rounded-xl bg-white/15 border border-white/20 flex items-center justify-center font-black text-base text-amber-300">LH</div>
+                <div class="hidden sm:block">
+                    <div class="text-base font-black tracking-tight">LITAJ HARDWARE</div>
+                    <div class="text-[10px] text-orange-200">Management & Financial Hub</div>
+                </div>
+            </div>
+            <nav class="hidden md:flex items-center gap-1 text-sm font-semibold">
+                <a href="/pos.html"       class="px-3 py-2 rounded-lg hover:bg-white/10 transition-colors">🧾 POS</a>
+                <a href="/inventory.html" class="px-3 py-2 rounded-lg hover:bg-white/10 transition-colors">📦 Inventory</a>
+                <a href="/customers.html" class="px-3 py-2 rounded-lg hover:bg-white/10 transition-colors">👥 Customers</a>
+                <a href="/admin.html"     class="px-3 py-2 rounded-lg bg-white/15 border border-white/20">⚙️ Admin</a>
+            </nav>
+            <div class="flex items-center gap-3">
+                <span id="current-user-badge" class="hidden sm:inline-flex text-xs bg-orange-800/50 border border-orange-500/30 px-3 py-1.5 rounded-full font-medium text-orange-100">Admin</span>
+                <button id="btn-logout" class="px-3 py-1.5 bg-white text-orange-700 hover:bg-orange-50 rounded-lg text-xs font-bold transition-all shadow-sm">Logout</button>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-screen-2xl mx-auto px-4 py-6 space-y-6">
+
+        <!-- Top Header & Time Filter -->
+        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div>
+                <h1 class="text-xl font-black text-slate-900">Executive Financial Dashboard</h1>
+                <p class="text-sm text-slate-500 mt-0.5">Real-time revenue, net margins, operating overheads, and staff management</p>
+            </div>
+            <div class="flex items-center gap-2">
+                <select id="filter-period" class="px-4 py-2 rounded-xl border border-slate-200 bg-white text-sm font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-orange-500">
+                    <option value="today">Today</option>
+                    <option value="week">Last 7 Days</option>
+                    <option value="month" selected>This Month</option>
+                    <option value="all">All Time</option>
+                </select>
+                <button id="btn-refresh-admin" class="px-3.5 py-2 rounded-xl bg-orange-600 hover:bg-orange-700 text-white text-sm font-bold shadow-md shadow-orange-200 transition-all">
+                    ↻ Refresh
+                </button>
+            </div>
+        </div>
+
+        <!-- 4 Key Financial Metrics -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div class="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
+                <div class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Gross Revenue</div>
+                <div id="stat-revenue" class="text-2xl font-black text-slate-900">Ksh 0.00</div>
+                <div class="text-[11px] text-slate-400 mt-1"><span id="stat-sales-count">0</span> sales completed</div>
+            </div>
+
+            <div class="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
+                <div class="text-xs font-bold text-emerald-600 uppercase tracking-wider mb-1">Gross Margin</div>
+                <div id="stat-margin" class="text-2xl font-black text-emerald-600">Ksh 0.00</div>
+                <div class="text-[11px] text-slate-400 mt-1">Product sales profit</div>
+            </div>
+
+            <div class="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
+                <div class="text-xs font-bold text-red-500 uppercase tracking-wider mb-1">Operating Expenses</div>
+                <div id="stat-expenses" class="text-2xl font-black text-red-600">Ksh 0.00</div>
+                <div class="text-[11px] text-slate-400 mt-1"><span id="stat-expenses-count">0</span> expense entries</div>
+            </div>
+
+            <div class="bg-gradient-to-br from-orange-600 to-orange-700 rounded-2xl p-5 shadow-md shadow-orange-900/20 text-white">
+                <div class="text-xs font-bold text-orange-200 uppercase tracking-wider mb-1">Net Operating Profit</div>
+                <div id="stat-net-profit" class="text-2xl font-black text-white">Ksh 0.00</div>
+                <div class="text-[11px] text-orange-200 mt-1">(Gross Margin − Expenses)</div>
+            </div>
+        </div>
+
+        <!-- Section Tabs -->
+        <div class="flex border-b border-slate-200 gap-6 text-sm font-bold">
+            <button class="tab-btn pb-3 border-b-2 border-orange-600 text-orange-600" data-tab="expenses-panel">Operating Expenses</button>
+            <button class="tab-btn pb-3 text-slate-500 hover:text-slate-800" data-tab="staff-panel">Staff & PINs</button>
+            <button class="tab-btn pb-3 text-slate-500 hover:text-slate-800" data-tab="settings-panel">Business Settings</button>
+        </div>
+
+        <!-- TAB 1: Operating Expenses -->
+        <div id="expenses-panel" class="tab-content space-y-4">
+            <div class="flex justify-between items-center">
+                <h2 class="text-base font-bold text-slate-800">Hardware Operating Expenses</h2>
+                <button id="btn-add-expense" class="px-4 py-2 rounded-xl bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold shadow-md shadow-orange-200">
+                    + Record Expense
+                </button>
+            </div>
+
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead class="bg-slate-50 border-b border-slate-200">
+                            <tr>
+                                <th class="py-3 px-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Date</th>
+                                <th class="py-3 px-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Category</th>
+                                <th class="py-3 px-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Description</th>
+                                <th class="py-3 px-4 text-right text-xs font-bold text-slate-500 uppercase tracking-wider">Amount (Ksh)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="expenses-table-body">
+                            <tr><td colspan="4" class="text-center py-8 text-slate-400">Loading expenses...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 2: Staff & PINs -->
+        <div id="staff-panel" class="tab-content hidden space-y-4">
+            <div class="flex justify-between items-center">
+                <h2 class="text-base font-bold text-slate-800">Staff Accounts & Counter Terminals</h2>
+                <button id="btn-add-user" class="px-4 py-2 rounded-xl bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold shadow-md shadow-orange-200">
+                    + Add Staff User
+                </button>
+            </div>
+
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead class="bg-slate-50 border-b border-slate-200">
+                            <tr>
+                                <th class="py-3 px-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Full Name</th>
+                                <th class="py-3 px-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Username</th>
+                                <th class="py-3 px-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Role</th>
+                                <th class="py-3 px-4 text-center text-xs font-bold text-slate-500 uppercase tracking-wider">PIN</th>
+                                <th class="py-3 px-4 text-center text-xs font-bold text-slate-500 uppercase tracking-wider">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="staff-table-body">
+                            <tr><td colspan="5" class="text-center py-8 text-slate-400">Loading staff accounts...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 3: Business Settings -->
+        <div id="settings-panel" class="tab-content hidden space-y-4">
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 max-w-2xl">
+                <h2 class="text-base font-bold text-slate-800 mb-4">Store Identity & Receipt Details</h2>
+                <form id="form-settings" class="space-y-4">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Company Name</label>
+                        <input id="set-company" type="text" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500">
+                    </div>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Phone Contact</label>
+                            <input id="set-phone" type="text" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Currency Symbol</label>
+                            <input id="set-currency" type="text" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Physical Address</label>
+                        <input id="set-address" type="text" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Receipt Footer Note</label>
+                        <textarea id="set-footer" rows="2" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500"></textarea>
+                    </div>
+                    <button type="submit" class="px-5 py-2.5 bg-orange-600 hover:bg-orange-700 text-white font-bold text-sm rounded-xl shadow-md shadow-orange-200 transition-all">
+                        Save Store Settings
+                    </button>
+                </form>
+            </div>
+        </div>
+    </main>
+
+    <!-- Modal: Add Expense -->
+    <div id="modal-expense" class="hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+            <div class="bg-gradient-to-r from-orange-600 to-orange-700 rounded-t-2xl px-6 py-4 flex items-center justify-between">
+                <h3 class="text-white font-bold">Record Operating Expense</h3>
+                <button id="btn-close-expense-modal" class="text-white/70 hover:text-white text-xl font-bold">✕</button>
+            </div>
+            <form id="form-expense" class="p-6 space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Expense Category *</label>
+                    <select id="exp-category" required class="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-orange-500">
+                        <option value="Transport / Delivery">Transport / Delivery</option>
+                        <option value="Utilities">Utilities (Electricity, Water, Internet)</option>
+                        <option value="Wages & Casual Labor">Wages & Casual Labor</option>
+                        <option value="Store Maintenance">Store Maintenance</option>
+                        <option value="Miscellaneous">Miscellaneous</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Description *</label>
+                    <input id="exp-desc" type="text" required placeholder="e.g. Offloading cement truck"
+                        class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Amount (Ksh) *</label>
+                    <input id="exp-amount" type="number" min="1" step="any" required placeholder="0.00"
+                        class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-orange-500">
+                </div>
+                <button type="submit" class="w-full py-3.5 bg-orange-600 hover:bg-orange-700 text-white font-black rounded-xl transition-all shadow-md shadow-orange-200">
+                    Save Expense
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: Add / Edit User -->
+    <div id="modal-user" class="hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+            <div class="bg-gradient-to-r from-orange-600 to-orange-700 rounded-t-2xl px-6 py-4 flex items-center justify-between">
+                <h3 id="modal-user-title" class="text-white font-bold">Add Staff Account</h3>
+                <button id="btn-close-user-modal" class="text-white/70 hover:text-white text-xl font-bold">✕</button>
+            </div>
+            <form id="form-user" class="p-6 space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Full Name *</label>
+                    <input id="usr-fullname" type="text" required placeholder="e.g. Mary Wanjiku"
+                        class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Username *</label>
+                    <input id="usr-username" type="text" required placeholder="e.g. cashier2"
+                        class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500">
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Role *</label>
+                        <select id="usr-role" required class="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-orange-500">
+                            <option value="cashier">Cashier</option>
+                            <option value="manager">Manager</option>
+                            <option value="admin">Administrator</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 uppercase mb-1">4-Digit PIN *</label>
+                        <input id="usr-pin" type="text" maxlength="8" required placeholder="e.g. 1122"
+                            class="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-mono text-center text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500">
+                    </div>
+                </div>
+                <button type="submit" class="w-full py-3.5 bg-orange-600 hover:bg-orange-700 text-white font-black rounded-xl transition-all shadow-md shadow-orange-200">
+                    Save Staff Account
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <script type="module" src="/js/admin.js"></script>
+</body>
+</html>

@@ -1,7 +1,7 @@
 /**
  * Litaj Hardware POS — Express Web Server
  * Layer 02 (APIs) + Layer 05 (Hosting) + Layer 13 (Availability)
- * All secrets loaded exclusively from environment variables (Layer 05 compliant)
+ * Injects environment variables securely into HTML meta tags at runtime.
  */
 
 'use strict';
@@ -10,12 +10,13 @@ require('dotenv').config();
 
 const express = require('express');
 const path    = require('path');
+const fs      = require('fs');
 const cors    = require('cors');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
 
-// ── Middleware ───────────────────────────────────────────────
+// ── Security & Middleware ────────────────────────────────────
 app.use(cors({ origin: '*' }));
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true }));
@@ -29,11 +30,54 @@ app.use((req, res, next) => {
     next();
 });
 
-// Static assets (Layer 10 — served efficiently)
+// Helper: Serve HTML with runtime injected credentials from .env
+function sendHtml(fileName, res) {
+    const fullPath = path.join(__dirname, '../public', fileName);
+    if (!fs.existsSync(fullPath)) {
+        return res.status(404).send('Page not found');
+    }
+
+    let html = fs.readFileSync(fullPath, 'utf8');
+    const anonKey = process.env.SUPABASE_ANON_KEY || '';
+    const supaUrl = process.env.SUPABASE_URL || '';
+
+    if (anonKey) {
+        html = html.replace(/REPLACE_WITH_ANON_KEY/g, anonKey);
+    }
+    if (supaUrl) {
+        html = html.replace(/https:\/\/sbpncxjddwontoemkuye\.supabase\.co/g, supaUrl);
+    }
+
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(html);
+}
+
+// ── Explicit HTML Routes with Injected Meta Tags ─────────────
+app.get('/',               (req, res) => sendHtml('login.html', res));
+app.get('/login',          (req, res) => sendHtml('login.html', res));
+app.get('/login.html',     (req, res) => sendHtml('login.html', res));
+app.get('/pos',            (req, res) => sendHtml('pos.html', res));
+app.get('/pos.html',       (req, res) => sendHtml('pos.html', res));
+app.get('/inventory',      (req, res) => sendHtml('inventory.html', res));
+app.get('/inventory.html', (req, res) => sendHtml('inventory.html', res));
+app.get('/customers',      (req, res) => sendHtml('customers.html', res));
+app.get('/customers.html', (req, res) => sendHtml('customers.html', res));
+app.get('/admin',          (req, res) => sendHtml('admin.html', res));
+app.get('/admin.html',     (req, res) => sendHtml('admin.html', res));
+
+// ── Static Assets (JS, CSS, Images) ──────────────────────────
 app.use(express.static(path.join(__dirname, '../public'), {
     maxAge: process.env.NODE_ENV === 'production' ? '1d' : 0,
     etag: true
 }));
+
+// ── Client Configuration Endpoint ────────────────────────────
+app.get('/api/config', (req, res) => {
+    res.json({
+        supabaseUrl: process.env.SUPABASE_URL || '',
+        supabaseAnonKey: process.env.SUPABASE_ANON_KEY || ''
+    });
+});
 
 // ── Health Check (Layer 13 — Availability) ──────────────────
 app.get('/healthz', (req, res) => {
@@ -46,23 +90,15 @@ app.get('/healthz', (req, res) => {
     });
 });
 
-// ── HTML Page Routes ─────────────────────────────────────────
-app.get('/',           (req, res) => res.sendFile(path.join(__dirname, '../public/login.html')));
-app.get('/login',      (req, res) => res.sendFile(path.join(__dirname, '../public/login.html')));
-app.get('/pos',        (req, res) => res.sendFile(path.join(__dirname, '../public/pos.html')));
-app.get('/inventory',  (req, res) => res.sendFile(path.join(__dirname, '../public/inventory.html')));
-app.get('/customers',  (req, res) => res.sendFile(path.join(__dirname, '../public/customers.html')));
-app.get('/admin',      (req, res) => res.sendFile(path.join(__dirname, '../public/admin.html')));
-
 // ── Fallback Router ──────────────────────────────────────────
 app.use((req, res, next) => {
     if (req.method === 'GET' && req.accepts('html')) {
-        return res.sendFile(path.join(__dirname, '../public/login.html'));
+        return sendHtml('login.html', res);
     }
     next();
 });
 
-// ── Global Error Handler (Layer 12 — never leak stack traces) ──
+// ── Global Error Handler (Layer 12 — hide stack traces) ──────
 app.use((err, req, res, next) => {
     const isDev = process.env.NODE_ENV !== 'production';
     console.error('[ERROR]', err.message);
@@ -72,7 +108,7 @@ app.use((err, req, res, next) => {
     });
 });
 
-// ── Start ────────────────────────────────────────────────────
+// ── Start Server ─────────────────────────────────────────────
 app.listen(PORT, () => {
     console.log('====================================================');
     console.log('🟧  LITAJ HARDWARE POS SERVER STARTED');
