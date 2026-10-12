@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Link Products | Litaj Hardware</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .drag-over { background-color: #fff7ed; border: 2px dashed #ea580c; }
+    </style>
+</head>
+<body class="bg-slate-100 min-h-screen text-slate-800">
+
+    <!-- Top Navigation -->
+    <nav class="bg-white shadow-sm border-b border-slate-200 sticky top-0 z-40">
+        <div class="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
+            <div class="flex items-center gap-6">
+                <a href="pos.html" class="font-black text-xl text-orange-600 tracking-tight">LITAJ<span class="text-slate-800">HARDWARE</span></a>
+                <div class="hidden md:flex space-x-1">
+                    <a href="pos.html" class="px-3 py-2 rounded-lg text-sm font-bold text-slate-500 hover:text-slate-900 transition-colors">POS</a>
+                    <a href="inventory.html" class="px-3 py-2 rounded-lg text-sm font-bold text-slate-500 hover:text-slate-900 transition-colors">Inventory</a>
+                    <a href="link-products.html" class="px-3 py-2 rounded-lg text-sm font-bold text-orange-600 bg-orange-50 transition-colors">Link Products</a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="max-w-7xl mx-auto px-4 py-8">
+        <div class="mb-6">
+            <h1 class="text-2xl font-black text-slate-800">Link Existing Products (Drag & Drop)</h1>
+            <p class="text-slate-500 text-sm mt-1">Drag a child product and drop it onto a parent product to link them into a packaging tier.</p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            
+<div class="bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col h-[70vh]">
+    <div class="p-4 border-b border-slate-100 bg-slate-50 rounded-t-xl flex justify-between items-center">
+        <h2 class="font-bold text-slate-800">Quick Add Product</h2>
+        <button id="btn-quick-add" class="px-3 py-1 bg-orange-600 text-white font-bold rounded-lg text-sm shadow-md shadow-orange-600/20">Save Product</button>
+    </div>
+    <div class="p-4 overflow-y-auto flex-1 space-y-4" id="quick-add-form">
+        <!-- TIER 1 -->
+        <div class="p-3 bg-orange-50 border border-orange-200 rounded-xl transition-colors" id="qa-section-1">
+            <div class="flex justify-between items-center mb-2">
+                <h3 class="text-xs font-bold text-orange-800 uppercase">1. Tier 1 (Base Unit)</h3>
+                <span id="qa-linked-badge-1" class="hidden px-2 py-1 bg-green-100 text-green-700 text-[10px] font-bold rounded-lg border border-green-200">Linked</span>
+            </div>
+            <div class="space-y-2">
+                <div><label class="block text-xs font-semibold">Product Name (e.g. A4 Paper Sheet)</label><input type="text" id="qa-t1-name" class="w-full border rounded-lg px-2 py-1 text-sm"></div>
+                <div class="flex gap-2">
+                    <div class="flex-1"><label class="block text-xs font-semibold">Type</label><select id="qa-type" class="w-full border rounded-lg px-2 py-1 text-sm"><option value="fixed">Fixed</option><option value="variable">Variable</option></select></div>
+                    <div class="flex items-center pt-4"><input type="checkbox" id="qa-svc" class="mr-1 h-3 w-3"><label class="text-xs font-semibold">Service</label></div>
+                </div>
+                <div class="grid grid-cols-3 gap-2">
+                    <div><label class="block text-[10px] font-semibold">Cost</label><input type="number" id="qa-t1-cp" class="w-full border rounded-lg px-2 py-1 text-sm" value="0"></div>
+                    <div><label class="block text-[10px] font-semibold">Sell</label><input type="number" id="qa-t1-sp" class="w-full border rounded-lg px-2 py-1 text-sm" value="0"></div>
+                    <div><label class="block text-[10px] font-semibold">Stock</label><input type="number" id="qa-t1-stock" class="w-full border rounded-lg px-2 py-1 text-sm" value="0"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TIER 2 -->
+        <div class="p-3 bg-slate-50 border border-slate-200 rounded-xl transition-colors" id="qa-section-2">
+            <div class="flex justify-between items-center mb-2">
+                <h3 class="text-xs font-bold text-slate-800 uppercase">2. Tier 2</h3>
+                <div class="flex items-center gap-2">
+                    <span id="qa-linked-badge-2" class="hidden px-2 py-1 bg-green-100 text-green-700 text-[10px] font-bold rounded-lg border border-green-200">Linked</span>
+                    <div class="flex items-center"><input type="checkbox" id="qa-t2-en" class="mr-1 h-3 w-3" onchange="document.getElementById('qa-t2-body').classList.toggle('hidden', !this.checked)"><label class="text-xs font-bold text-orange-600">Enable</label></div>
+                </div>
+            </div>
+            <div id="qa-t2-body" class="hidden space-y-2">
+                <div><label class="block text-xs font-semibold">Product Name (e.g. A4 Paper Ream)</label><input type="text" id="qa-t2-name" class="w-full border rounded-lg px-2 py-1 text-sm"></div>
+                <div><label class="block text-xs font-bold text-orange-700">Units per Tier 1</label><input type="number" id="qa-t2-units" class="w-full border-2 border-orange-300 rounded-lg px-2 py-1 text-sm font-bold" value="1"></div>
+                <div class="grid grid-cols-3 gap-2">
+                    <div><label class="block text-[10px] font-semibold">Cost</label><input type="number" id="qa-t2-cp" class="w-full border rounded-lg px-2 py-1 text-sm" value="0"></div>
+                    <div><label class="block text-[10px] font-semibold">Sell</label><input type="number" id="qa-t2-sp" class="w-full border rounded-lg px-2 py-1 text-sm" value="0"></div>
+                    <div><label class="block text-[10px] font-semibold">Stock</label><input type="number" id="qa-t2-stock" class="w-full border rounded-lg px-2 py-1 text-sm" value="0"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TIER 3 -->
+        <div class="p-3 bg-slate-50 border border-slate-200 rounded-xl transition-colors" id="qa-section-3">
+            <div class="flex justify-between items-center mb-2">
+                <h3 class="text-xs font-bold text-slate-800 uppercase">3. Tier 3</h3>
+                <div class="flex items-center gap-2">
+                    <span id="qa-linked-badge-3" class="hidden px-2 py-1 bg-green-100 text-green-700 text-[10px] font-bold rounded-lg border border-green-200">Linked</span>
+                    <div class="flex items-center"><input type="checkbox" id="qa-t3-en" class="mr-1 h-3 w-3" onchange="document.getElementById('qa-t3-body').classList.toggle('hidden', !this.checked)"><label class="text-xs font-bold text-orange-600">Enable</label></div>
+                </div>
+            </div>
+            <div id="qa-t3-body" class="hidden space-y-2">
+                <div><label class="block text-xs font-semibold">Product Name (e.g. A4 Paper Box)</label><input type="text" id="qa-t3-name" class="w-full border rounded-lg px-2 py-1 text-sm"></div>
+                <div><label class="block text-xs font-bold text-orange-700">Units per Tier 2</label><input type="number" id="qa-t3-units" class="w-full border-2 border-orange-300 rounded-lg px-2 py-1 text-sm font-bold" value="1"></div>
+                <div class="grid grid-cols-3 gap-2">
+                    <div><label class="block text-[10px] font-semibold">Cost</label><input type="number" id="qa-t3-cp" class="w-full border rounded-lg px-2 py-1 text-sm" value="0"></div>
+                    <div><label class="block text-[10px] font-semibold">Sell</label><input type="number" id="qa-t3-sp" class="w-full border rounded-lg px-2 py-1 text-sm" value="0"></div>
+                    <div><label class="block text-[10px] font-semibold">Stock</label><input type="number" id="qa-t3-stock" class="w-full border rounded-lg px-2 py-1 text-sm" value="0"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+            <!-- Unlinked/All Products List -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col h-[70vh]">
+                <div class="p-4 border-b border-slate-100 bg-slate-50 rounded-t-xl">
+                    <h2 class="font-bold text-slate-800">All Products</h2>
+                    <input type="text" id="search-products" placeholder="Search..." class="mt-2 w-full px-3 py-2 border rounded-lg text-sm">
+                </div>
+                <div class="p-4 overflow-y-auto flex-1" id="products-list">
+                    <!-- Products rendered here -->
+                </div>
+            </div>
+
+            <!-- Hierarchy Builder -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col h-[70vh]">
+                <div class="p-4 border-b border-slate-100 bg-slate-50 rounded-t-xl flex justify-between items-center">
+                    <h2 class="font-bold text-slate-800">Hierarchy Builder</h2>
+                    <button id="btn-save-links" class="px-4 py-2 bg-orange-600 text-white font-bold rounded-lg text-sm hidden shadow-md shadow-orange-600/20">Save Links</button>
+                </div>
+                <div class="p-4 overflow-y-auto flex-1 bg-slate-50" id="hierarchy-zone">
+                    <div class="text-center py-10 text-slate-400 font-medium text-sm">
+                        Drag a product here to set it as a <strong class="text-slate-600">Parent</strong>, then drop another product into it as a <strong class="text-slate-600">Child</strong>.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Link Modal (units_per_parent) -->
+    
+    <div id="link-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 hidden">
+        <div class="bg-white p-6 rounded-xl w-full max-w-md shadow-2xl">
+            <h3 class="font-bold text-lg mb-2">Set Conversion & Details</h3>
+            <p class="text-sm text-slate-600 mb-4">How many <strong id="lm-child-name" class="text-orange-600"></strong> are in one <strong id="lm-parent-name" class="text-orange-600"></strong>?</p>
+            
+            <div class="space-y-3">
+                <div>
+                    <label class="block text-xs font-bold mb-1">Units per Parent</label>
+                    <input type="number" id="lm-units" class="w-full border-2 border-orange-300 px-3 py-2 rounded-lg font-bold text-lg" value="1" min="1">
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-bold mb-1 text-slate-600">Child Buying Price</label>
+                        <input type="number" id="lm-bp" class="w-full border px-3 py-2 rounded-lg text-sm" value="0">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold mb-1 text-slate-600">Child Selling Price</label>
+                        <input type="number" id="lm-sp" class="w-full border px-3 py-2 rounded-lg text-sm" value="0">
+                    </div>
+                    <div class="col-span-2">
+                        <label class="block text-xs font-bold mb-1 text-slate-600">Child Stock Qty</label>
+                        <input type="number" id="lm-stock" class="w-full border px-3 py-2 rounded-lg text-sm" value="0">
+                    </div>
+                </div>
+            </div>
+
+            <div class="mt-6 flex justify-end gap-2">
+                <button id="lm-cancel" class="px-4 py-2 bg-slate-100 rounded-lg font-bold hover:bg-slate-200">Cancel</button>
+                <button id="lm-confirm" class="px-4 py-2 bg-orange-600 text-white rounded-lg font-bold hover:bg-orange-700">Confirm & Link</button>
+            </div>
+        </div>
+    </div>
+
+
+    <script type="module" src="js/linkProducts.js"></script>
+</body>
+</html>

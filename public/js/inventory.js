@@ -1,262 +1,711 @@
-/**
- * Litaj Hardware POS — Inventory Controller
- * Layer 01: Client-side form validation before any DB call
- * Layer 03: All queries via Supabase SDK (parameterized — SQL injection mitigated)
- * Layer 04: requireAuth() guard at top of execution
- */
-
-import { supabase, requireAuth, currentUser, formatKsh, showToast } from './supabaseClient.js';
-
+import { supabase, currentUser, requireAuth } from './supabaseClient.js';
+import { showModal } from './uiHelper.js';
 requireAuth();
 
-let inventoryList = [];
-let editingItemId = null;
+let allInventory = [];
 
-// ── Init ─────────────────────────────────────────────────────
-document.addEventListener('DOMContentLoaded', async () => {
-    await loadInventory();
-    bindSearch();
-    bindModalHandlers();
-    bindFormSubmit();
-    bindExport();
+async function load() {
+    const tb = document.getElementById('inv-tbody');
+    // Show skeleton rows while fetching
+    tb.innerHTML = Array(8).fill(0).map(() => `
+        <tr class="border-b border-slate-100">
+            <td class="py-3 px-4"><div class="h-4 bg-slate-200 rounded animate-pulse w-3/4"></div></td>
+            <td class="py-3 px-4"><div class="h-4 bg-slate-200 rounded animate-pulse w-16"></div></td>
+            <td class="py-3 px-4"><div class="h-4 bg-slate-200 rounded animate-pulse w-12 ml-auto"></div></td>
+            <td class="py-3 px-4"><div class="h-4 bg-slate-200 rounded animate-pulse w-12 ml-auto"></div></td>
+            <td class="py-3 px-4"><div class="h-4 bg-slate-200 rounded animate-pulse w-8 mx-auto"></div></td>
+            <td class="py-3 px-4"><div class="h-4 bg-slate-200 rounded animate-pulse w-24 mx-auto"></div></td>
+        </tr>
+    `).join('');
+
+    const {data} = await supabase.from('inventory').select('*').order('name');
+    allInventory = data || [];
+    renderTable();
+}
+
+function renderTable() {
+    const tb = document.getElementById('inv-tbody');
+    const term = document.getElementById('inv-search').value.toLowerCase();
+    const sortVal = document.getElementById('inv-sort').value;
+
+    let filtered = allInventory.filter(i => i.name.toLowerCase().includes(term) || (i.type && i.type.toLowerCase().includes(term)));
+
+    filtered.sort((a, b) => {
+        if (sortVal === 'name-asc') return a.name.localeCompare(b.name);
+        if (sortVal === 'name-desc') return b.name.localeCompare(a.name);
+        if (sortVal === 'sell-high') return (b.selling_price || 0) - (a.selling_price || 0);
+        if (sortVal === 'sell-low') return (a.selling_price || 0) - (b.selling_price || 0);
+        if (sortVal === 'buy-high') return (b.buying_price || 0) - (a.buying_price || 0);
+        if (sortVal === 'buy-low') return (a.buying_price || 0) - (b.buying_price || 0);
+        return 0;
+    });
+
+    let html = '';
+    filtered.forEach(i => {
+        // Calculate Yield Text
+        let yieldText = '-';
+        if (i.parent_id && i.units_per_parent) {
+            const parent = allInventory.find(p => p.id === i.parent_id);
+            if (parent) {
+                yieldText = `<span class="text-xs text-slate-400">1 ${parent.name} = </span><br/><span class="font-bold">${i.units_per_parent} pcs</span>`;
+            } else {
+                yieldText = `<span class="font-bold">${i.units_per_parent} pcs</span>`;
+            }
+        } else if (i.units_per_parent > 1) {
+            yieldText = `<span class="font-bold text-xs text-slate-500">${i.units_per_parent} pcs (Bulk)</span>`;
+        }
+
+        // Main Display Row
+        html += `
+        <tr class="hover:bg-slate-50 border-b border-slate-100 transition-colors">
+            <td class="py-3 px-4 font-medium text-slate-800">${i.name}</td>
+            <td class="py-3 px-4"><span class="px-2 py-1 text-xs font-bold rounded ${i.is_service ? 'bg-slate-100 text-slate-600' : 'bg-orange-100 text-orange-700'}">${i.is_service ? 'Service' : i.type}</span></td>
+            <td class="py-3 px-4 text-right">${i.buying_price}</td>
+            <td class="py-3 px-4 text-right font-bold text-slate-800">${i.selling_price}</td>
+            <td class="py-3 px-4 text-center">${i.is_service ? '-' : i.stock_quantity}</td>
+            <td class="py-3 px-4 text-center leading-tight">${i.is_service ? '-' : yieldText}</td>
+            <td class="py-3 px-4 text-center">
+                <button class="bg-orange-50 hover:bg-orange-100 text-orange-700 px-3 py-1 rounded font-bold text-xs mr-2 transition-colors" onclick="toggleEdit('${i.id}')">Edit</button>
+                <button class="bg-red-50 hover:bg-red-100 text-red-600 px-3 py-1 rounded font-bold text-xs transition-colors" onclick="del('${i.id}', '${i.name.replace(/'/g, "\\'")}')">Delete</button>
+            </td>
+        </tr>
+        
+        <!-- Inline Edit Row (Hidden by default) -->
+        <tr id="edit-row-${i.id}" class="hidden bg-slate-100 border-b-2 border-slate-200 shadow-inner">
+            <td colspan="7" class="p-4">
+                <div class="grid grid-cols-1 md:grid-cols-6 gap-4 items-end bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                    <div class="md:col-span-2">
+                        <label class="block text-xs font-bold mb-1 text-slate-600">Item Name</label>
+                        <input type="text" id="edit-name-${i.id}" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-orange-500 outline-none transition-shadow" value="${i.name}">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold mb-1 text-slate-600">Type</label>
+                        <select id="edit-type-${i.id}" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-orange-500">
+                            <option value="fixed" ${i.type === 'fixed' ? 'selected' : ''}>Fixed Price</option>
+                            <option value="variable" ${i.type === 'variable' ? 'selected' : ''}>Variable Price</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold mb-1 text-slate-600">Buy Price (Ksh)</label>
+                        <input type="number" id="edit-bp-${i.id}" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-orange-500 outline-none transition-shadow" value="${i.buying_price}">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold mb-1 text-slate-600">Sell Price (Ksh)</label>
+                        <input type="number" id="edit-sp-${i.id}" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-orange-500 outline-none transition-shadow" value="${i.selling_price}">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold mb-1 text-slate-600">Stock Qty</label>
+                        <input type="number" id="edit-stock-${i.id}" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-orange-500 outline-none transition-shadow" value="${i.stock_quantity}">
+                    </div>
+                    <div class="md:col-span-6 flex items-center justify-between border-t border-slate-100 pt-3 mt-1">
+                        <div class="flex items-center">
+                            <input type="checkbox" id="edit-svc-${i.id}" class="w-4 h-4 text-orange-600 rounded border-gray-300 focus:ring-orange-500" ${i.is_service ? 'checked' : ''}>
+                            <label class="ml-2 text-sm font-bold text-slate-700">This is a Service (Raw materials tracked via Admin/Resources)</label>
+                        </div>
+                        <div class="flex gap-2">
+                            <button onclick="openEditWizard('${i.id}')" class="px-4 py-2 bg-purple-50 text-purple-700 border border-purple-200 rounded-lg text-sm font-bold hover:bg-purple-100 transition-colors">Edit Hierarchy</button>
+                              <button onclick="toggleEdit('${i.id}')" class="px-4 py-2 bg-white border border-slate-300 rounded-lg text-sm font-bold text-slate-600 hover:bg-slate-50 transition-colors">Cancel</button>
+                            <button onclick="saveEdit('${i.id}')" class="px-4 py-2 bg-orange-600 rounded-lg text-sm font-bold text-white hover:bg-orange-700 transition-colors shadow-md shadow-orange-600/20">Save Changes</button>
+                        </div>
+                    </div>
+                </div>
+            </td>
+        </tr>
+        `;
+    });
+    tb.innerHTML = html;
+}
+
+window.toggleEdit = (id) => {
+    const row = document.getElementById(`edit-row-${id}`);
+    if (row.classList.contains('hidden')) {
+        // Hide all other open edits first
+        document.querySelectorAll('[id^="edit-row-"]').forEach(el => el.classList.add('hidden'));
+        row.classList.remove('hidden');
+    } else {
+        row.classList.add('hidden');
+    }
+};
+
+window.saveEdit = async (id) => {
+    const payload = {
+        name: document.getElementById(`edit-name-${id}`).value,
+        type: document.getElementById(`edit-type-${id}`).value,
+        is_service: document.getElementById(`edit-svc-${id}`).checked,
+        buying_price: parseFloat(document.getElementById(`edit-bp-${id}`).value || 0),
+        selling_price: parseFloat(document.getElementById(`edit-sp-${id}`).value || 0),
+        stock_quantity: parseInt(document.getElementById(`edit-stock-${id}`).value || 0)
+    };
+    
+    if(!payload.name) {
+        alert("Name is required");
+        return;
+    }
+    
+    // Save to supabase
+    const { error } = await supabase.from('inventory').update(payload).eq('id', id);
+    if (error) {
+        alert("Error saving: " + error.message);
+    } else {
+        load();
+    }
+};
+
+window.del = (id, name) => { 
+    showModal('Delete Item', `<p>Are you sure you want to delete <strong>${name}</strong>? This action cannot be undone.</p>`, async (close) => {
+        await supabase.from('inventory').delete().eq('id',id);
+        close(); load();
+    }, 'Delete Item');
+};
+
+document.getElementById('btn-add-item').addEventListener('click', () => {
+    showModal('Single-Screen Packaging Wizard', `
+        <div class="space-y-4 max-h-[70vh] overflow-y-auto pr-2" id="pkg-wizard-form">
+            <!-- Section 1: Core Info -->
+            <div class="p-4 bg-slate-50 border border-slate-200 rounded-xl">
+                <h3 class="text-sm font-bold text-slate-800 mb-3 uppercase tracking-wide">1. Core Product Info</h3>
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="col-span-2">
+                        <label class="block text-xs font-semibold mb-1">Base Name (e.g. A4 Paper)</label>
+                        <input type="text" id="wiz-name" class="w-full border rounded-lg px-3 py-2 text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold mb-1">Type</label>
+                        <select id="wiz-type" class="w-full border rounded-lg px-3 py-2 text-sm">
+                            <option value="fixed">Fixed Price</option>
+                            <option value="variable">Variable Price</option>
+                        </select>
+                    </div>
+                    <div class="flex items-center pt-5">
+                        <input type="checkbox" id="wiz-is-service" class="mr-2 h-4 w-4">
+                        <label class="text-xs font-semibold">Is Service (No Stock)</label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Section 2: Tier 1 Base Unit -->
+            <div class="p-4 bg-orange-50 border border-orange-100 rounded-xl">
+                <h3 class="text-sm font-bold text-orange-800 mb-3 uppercase tracking-wide">2. Tier 1: Base Retail Unit (e.g. Single Sheet)</h3>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div class="col-span-2 md:col-span-4">
+                        <label class="block text-xs font-semibold mb-1">Unit Modifier Name (Optional, e.g. "Sheet")</label>
+                        <input type="text" id="wiz-t1-mod" class="w-full border rounded-lg px-3 py-2 text-sm placeholder-slate-400" placeholder="e.g. Sheet">
+                    </div>
+                    
+                    <div>
+                        <label class="block text-xs font-semibold mb-1">Cost Price</label>
+                        <input type="number" id="wiz-t1-cp" class="w-full border rounded-lg px-3 py-2 text-sm" value="0">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold mb-1">Sell Price</label>
+                        <input type="number" id="wiz-t1-sp" class="w-full border rounded-lg px-3 py-2 text-sm" value="0">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold mb-1">Initial Stock</label>
+                        <input type="number" id="wiz-t1-stock" class="w-full border rounded-lg px-3 py-2 text-sm" value="0">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Section 3: Tier 2 Packet/Ream -->
+            <div class="p-4 bg-slate-50 border border-slate-200 rounded-xl">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="text-sm font-bold text-slate-800 uppercase tracking-wide">3. Tier 2: Packet / Ream</h3>
+                    <div class="flex items-center">
+                        <input type="checkbox" id="wiz-t2-en" class="mr-2 h-4 w-4 text-orange-600 rounded" onchange="document.getElementById('t2-body').classList.toggle('hidden', !this.checked)">
+                        <label class="text-xs font-bold text-orange-600">Enable Tier 2</label>
+                    </div>
+                </div>
+                <div id="t2-body" class="hidden grid grid-cols-2 md:grid-cols-5 gap-3">
+                    <div class="col-span-2 md:col-span-5">
+                        <label class="block text-xs font-semibold mb-1">Unit Modifier Name (e.g. "Ream")</label>
+                        <input type="text" id="wiz-t2-mod" class="w-full border rounded-lg px-3 py-2 text-sm" placeholder="e.g. Ream">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-orange-700 mb-1">Units per Packet</label>
+                        <input type="number" id="wiz-t2-units" class="w-full border-2 border-orange-300 rounded-lg px-3 py-2 text-sm font-bold" placeholder="e.g. 500">
+                    </div>
+                    
+                    <div>
+                        <label class="block text-xs font-semibold mb-1">Cost Price</label>
+                        <input type="number" id="wiz-t2-cp" class="w-full border rounded-lg px-3 py-2 text-sm" value="0">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold mb-1">Sell Price</label>
+                        <input type="number" id="wiz-t2-sp" class="w-full border rounded-lg px-3 py-2 text-sm" value="0">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold mb-1">Bulk Stock</label>
+                        <input type="number" id="wiz-t2-stock" class="w-full border rounded-lg px-3 py-2 text-sm" value="0">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Section 4: Tier 3 Box -->
+            <div class="p-4 bg-slate-50 border border-slate-200 rounded-xl">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="text-sm font-bold text-slate-800 uppercase tracking-wide">4. Tier 3: Box</h3>
+                    <div class="flex items-center">
+                        <input type="checkbox" id="wiz-t3-en" class="mr-2 h-4 w-4 text-orange-600 rounded" onchange="document.getElementById('t3-body').classList.toggle('hidden', !this.checked)">
+                        <label class="text-xs font-bold text-orange-600">Enable Tier 3</label>
+                    </div>
+                </div>
+                <div id="t3-body" class="hidden grid grid-cols-2 md:grid-cols-5 gap-3">
+                    <div class="col-span-2 md:col-span-5">
+                        <label class="block text-xs font-semibold mb-1">Unit Modifier Name (e.g. "Box")</label>
+                        <input type="text" id="wiz-t3-mod" class="w-full border rounded-lg px-3 py-2 text-sm" placeholder="e.g. Box">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-orange-700 mb-1">Packets per Box</label>
+                        <input type="number" id="wiz-t3-units" class="w-full border-2 border-orange-300 rounded-lg px-3 py-2 text-sm font-bold" placeholder="e.g. 5">
+                    </div>
+                    
+                    <div>
+                        <label class="block text-xs font-semibold mb-1">Cost Price</label>
+                        <input type="number" id="wiz-t3-cp" class="w-full border rounded-lg px-3 py-2 text-sm" value="0">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold mb-1">Sell Price</label>
+                        <input type="number" id="wiz-t3-sp" class="w-full border rounded-lg px-3 py-2 text-sm" value="0">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold mb-1">Bulk Stock</label>
+                        <input type="number" id="wiz-t3-stock" class="w-full border rounded-lg px-3 py-2 text-sm" value="0">
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Section 5: Tier 4 Carton -->
+            <div class="p-4 bg-slate-50 border border-slate-200 rounded-xl">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="text-sm font-bold text-slate-800 uppercase tracking-wide">5. Tier 4: Carton</h3>
+                    <div class="flex items-center">
+                        <input type="checkbox" id="wiz-t4-en" class="mr-2 h-4 w-4 text-orange-600 rounded" onchange="document.getElementById('t4-body').classList.toggle('hidden', !this.checked)">
+                        <label class="text-xs font-bold text-orange-600">Enable Tier 4</label>
+                    </div>
+                </div>
+                <div id="t4-body" class="hidden grid grid-cols-2 md:grid-cols-5 gap-3">
+                    <div class="col-span-2 md:col-span-5">
+                        <label class="block text-xs font-semibold mb-1">Unit Modifier Name (e.g. "Carton")</label>
+                        <input type="text" id="wiz-t4-mod" class="w-full border rounded-lg px-3 py-2 text-sm" placeholder="e.g. Carton">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-orange-700 mb-1">Boxes per Carton</label>
+                        <input type="number" id="wiz-t4-units" class="w-full border-2 border-orange-300 rounded-lg px-3 py-2 text-sm font-bold" placeholder="e.g. 4">
+                    </div>
+                    
+                    <div>
+                        <label class="block text-xs font-semibold mb-1">Cost Price</label>
+                        <input type="number" id="wiz-t4-cp" class="w-full border rounded-lg px-3 py-2 text-sm" value="0">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold mb-1">Sell Price</label>
+                        <input type="number" id="wiz-t4-sp" class="w-full border rounded-lg px-3 py-2 text-sm" value="0">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold mb-1">Bulk Stock</label>
+                        <input type="number" id="wiz-t4-stock" class="w-full border rounded-lg px-3 py-2 text-sm" value="0">
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    `, async (close) => {
+        const baseName = document.getElementById('wiz-name').value;
+        if (!baseName) {
+            alert("Base Name is required.");
+            return;
+        }
+
+        const type = document.getElementById('wiz-type').value;
+        const isService = document.getElementById('wiz-is-service').checked;
+
+        // Build tiers top-down
+        const tiers = [];
+        
+        // Helper to construct item name
+        const getName = (mod) => mod ? `${baseName} (${mod})` : baseName;
+
+        // Tier 4
+        if (document.getElementById('wiz-t4-en').checked) {
+            tiers.push({
+                level: 4,
+                name: getName(document.getElementById('wiz-t4-mod').value),
+                type, is_service: isService, tier_level: 4,
+                
+                buying_price: parseFloat(document.getElementById('wiz-t4-cp').value||0),
+                selling_price: parseFloat(document.getElementById('wiz-t4-sp').value||0),
+                stock_quantity: parseInt(document.getElementById('wiz-t4-stock').value||0),
+                units_per_parent: 1, // Top level has no parent
+                _my_units: parseInt(document.getElementById('wiz-t4-units').value||1)
+            });
+        }
+
+        // Tier 3
+        if (document.getElementById('wiz-t3-en').checked) {
+            tiers.push({
+                level: 3,
+                name: getName(document.getElementById('wiz-t3-mod').value),
+                type, is_service: isService, tier_level: 3,
+                
+                buying_price: parseFloat(document.getElementById('wiz-t3-cp').value||0),
+                selling_price: parseFloat(document.getElementById('wiz-t3-sp').value||0),
+                stock_quantity: parseInt(document.getElementById('wiz-t3-stock').value||0),
+                _my_units: parseInt(document.getElementById('wiz-t3-units').value||1)
+            });
+        }
+
+        // Tier 2
+        if (document.getElementById('wiz-t2-en').checked) {
+            tiers.push({
+                level: 2,
+                name: getName(document.getElementById('wiz-t2-mod').value),
+                type, is_service: isService, tier_level: 2,
+                
+                buying_price: parseFloat(document.getElementById('wiz-t2-cp').value||0),
+                selling_price: parseFloat(document.getElementById('wiz-t2-sp').value||0),
+                stock_quantity: parseInt(document.getElementById('wiz-t2-stock').value||0),
+                _my_units: parseInt(document.getElementById('wiz-t2-units').value||1)
+            });
+        }
+
+        // Tier 1 (Always added)
+        tiers.push({
+            level: 1,
+            name: getName(document.getElementById('wiz-t1-mod').value),
+            type, is_service: isService, tier_level: 1,
+            
+            buying_price: parseFloat(document.getElementById('wiz-t1-cp').value||0),
+            selling_price: parseFloat(document.getElementById('wiz-t1-sp').value||0),
+            stock_quantity: parseInt(document.getElementById('wiz-t1-stock').value||0)
+        });
+
+        // Insert sequentially to link parent_ids properly
+        let lastParentId = null;
+        for (let i = 0; i < tiers.length; i++) {
+            const t = tiers[i];
+            
+            const payload = {
+                name: t.name,
+                type: t.type,
+                is_service: t.is_service,
+                tier_level: t.tier_level,
+                
+                buying_price: t.buying_price,
+                selling_price: t.selling_price,
+                stock_quantity: t.stock_quantity,
+                parent_id: lastParentId
+            };
+
+            // Calculate units_per_parent based on previous tier
+            if (i > 0) {
+                // The current tier is a child of the previous tier
+                // So units_per_parent is how many of THIS item fit into the PARENT item
+                payload.units_per_parent = tiers[i-1]._my_units || 1;
+            } else {
+                payload.units_per_parent = 1; // Top-most enabled tier
+            }
+
+            const { data, error } = await supabase.from('inventory').insert([payload]).select().single();
+            if (error) {
+                alert("Error saving tier " + t.level + ": " + error.message);
+                return; // Stop execution on error
+            }
+            lastParentId = data.id; // Pass ID down to next child
+        }
+
+        close();
+        load();
+    }, 'Save Packaging Hierarchy', 'max-w-4xl');
 });
 
-// ── Fetch Inventory ───────────────────────────────────────────
-export async function loadInventory() {
-    const tbody = document.getElementById('inventory-table-body');
-    if (tbody) tbody.innerHTML = `<tr><td colspan="8" class="text-center py-10 text-slate-400">Loading stock...</td></tr>`;
 
-    const { data, error } = await supabase
-        .from('inventory')
-        .select('*')
-        .order('name', { ascending: true });
+load();
+document.getElementById('inv-search').addEventListener('input', renderTable);
+document.getElementById('inv-sort').addEventListener('change', renderTable);
 
-    if (error) {
-        if (tbody) tbody.innerHTML = `<tr><td colspan="8" class="text-center py-8 text-red-500 text-sm">Error: ${error.message}</td></tr>`;
-        showToast('Failed to load inventory', 'error');
-        return;
-    }
+document.getElementById('btn-export-excel').addEventListener('click', async () => {
+    const btn = document.getElementById('btn-export-excel');
+    const originalText = btn.innerText;
+    
+    try {
+        btn.innerText = "Exporting...";
+        btn.disabled = true;
 
-    inventoryList = data || [];
-    renderStats();
-    renderTable(inventoryList);
-}
-
-// ── Stats ─────────────────────────────────────────────────────
-function renderStats() {
-    const lowCount = inventoryList.filter(i => Number(i.stock_quantity) <= Number(i.min_threshold)).length;
-    const totalEl  = document.getElementById('stat-total');
-    const lowEl    = document.getElementById('stat-low');
-    if (totalEl) totalEl.textContent = inventoryList.length;
-    if (lowEl)   lowEl.textContent   = lowCount;
-}
-
-// ── Render Table ──────────────────────────────────────────────
-function renderTable(items) {
-    const tbody = document.getElementById('inventory-table-body');
-    if (!tbody) return;
-
-    if (!items.length) {
-        tbody.innerHTML = `<tr><td colspan="8" class="text-center py-10 text-slate-400">No products found. Click "Add Product" to begin.</td></tr>`;
-        return;
-    }
-
-    tbody.innerHTML = items.map(item => {
-        const isLow    = Number(item.stock_quantity) <= Number(item.min_threshold);
-        const margin   = Number(item.selling_price) - Number(item.buying_price);
-        const isAdmin  = currentUser?.role === 'admin' || currentUser?.role === 'manager';
-        return `
-            <tr class="border-b border-slate-100 hover:bg-orange-50/30 transition-colors">
-                <td class="py-3 px-4">
-                    <div class="font-bold text-slate-800 text-sm">${item.name}</div>
-                    ${item.barcode ? `<div class="text-[10px] text-slate-400 font-mono">${item.barcode}</div>` : ''}
-                    ${item.is_quick_add ? `<span class="text-[9px] bg-orange-100 text-orange-700 font-bold px-1.5 py-0.5 rounded-full">⚡ Quick Add</span>` : ''}
-                </td>
-                <td class="py-3 px-4"><span class="px-2 py-1 bg-slate-100 text-slate-600 rounded-lg text-xs font-semibold">${item.category}</span></td>
-                <td class="py-3 px-4 text-xs font-bold uppercase text-slate-500">${item.unit_of_measure}</td>
-                <td class="py-3 px-4 text-right">
-                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold border ${
-                        isLow ? 'bg-amber-50 text-orange-700 border-orange-300' : 'bg-slate-50 text-slate-700 border-slate-200'
-                    }">
-                        ${item.stock_quantity}${isLow ? ' ⚠️' : ''}
-                    </span>
-                </td>
-                <td class="py-3 px-4 text-right text-xs font-mono text-slate-500">${formatKsh(item.buying_price)}</td>
-                <td class="py-3 px-4 text-right text-sm font-mono font-black text-slate-900">${formatKsh(item.selling_price)}</td>
-                <td class="py-3 px-4 text-right text-xs font-mono font-bold ${margin >= 0 ? 'text-emerald-600' : 'text-red-500'}">
-                    +${formatKsh(margin)}
-                </td>
-                <td class="py-3 px-4 text-center">
-                    <button data-id="${item.id}" class="btn-edit px-2.5 py-1 text-xs font-bold bg-orange-100 text-orange-700 hover:bg-orange-200 rounded-lg mr-1 transition-colors">Edit</button>
-                    ${isAdmin ? `<button data-id="${item.id}" class="btn-delete px-2.5 py-1 text-xs font-bold bg-red-50 text-red-600 hover:bg-red-100 rounded-lg transition-colors">Del</button>` : ''}
-                </td>
-            </tr>
-        `;
-    }).join('');
-
-    tbody.querySelectorAll('.btn-edit').forEach(btn =>
-        btn.addEventListener('click', () => openModal(btn.dataset.id))
-    );
-    tbody.querySelectorAll('.btn-delete').forEach(btn =>
-        btn.addEventListener('click', () => deleteProduct(btn.dataset.id))
-    );
-}
-
-// ── Search ────────────────────────────────────────────────────
-function bindSearch() {
-    document.getElementById('inv-search')?.addEventListener('input', e => {
-        const q = e.target.value.trim().toLowerCase();
-        renderTable(q ? inventoryList.filter(i => i.name.toLowerCase().includes(q) || (i.category || '').toLowerCase().includes(q) || (i.barcode || '').includes(q)) : inventoryList);
-    });
-}
-
-// ── Modal ─────────────────────────────────────────────────────
-function openModal(id = null) {
-    editingItemId = id;
-    const form    = document.getElementById('form-product');
-    const title   = document.getElementById('modal-product-title');
-    const errEl   = document.getElementById('form-error');
-    if (!form) return;
-
-    errEl?.classList.add('hidden');
-    form.reset();
-
-    if (id) {
-        title.textContent = 'Edit Hardware Product';
-        const item = inventoryList.find(i => i.id === id);
-        if (item) {
-            document.getElementById('prod-name').value     = item.name;
-            document.getElementById('prod-category').value = item.category;
-            document.getElementById('prod-uom').value      = item.unit_of_measure;
-            document.getElementById('prod-bp').value       = item.buying_price;
-            document.getElementById('prod-sp').value       = item.selling_price;
-            document.getElementById('prod-stock').value    = item.stock_quantity;
-            document.getElementById('prod-min').value      = item.min_threshold;
-            document.getElementById('prod-barcode').value  = item.barcode || '';
-            document.getElementById('prod-quickadd').checked = item.is_quick_add;
-            updateMarginPreview();
+        // Fetch fresh data directly from Supabase
+        const { data, error } = await supabase.from('inventory').select('*').order('name');
+        
+        if (error) throw error;
+        
+        if (!data || data.length === 0) {
+            alert("No inventory data to export.");
+            return;
         }
-    } else {
-        title.textContent = 'Add New Hardware Product';
-        document.getElementById('prod-min').value = '5';
-        document.getElementById('margin-preview').textContent = 'Ksh 0.00';
+
+        // Prepare data for Excel
+        const excelData = data.map(item => ({
+            'Item Name': item.name || 'Unnamed Item',
+            'Category': item.is_service ? 'Service' : (item.type === 'fixed' ? 'Fixed Price' : 'Variable Price'),
+            'Buying Price (Ksh)': item.buying_price || 0,
+            'Selling Price (Ksh)': item.selling_price || 0,
+            'Stock Quantity': item.is_service ? 'N/A' : (item.stock_quantity || 0),
+            'Potential Profit per Item (Ksh)': (item.selling_price || 0) - (item.buying_price || 0)
+        }));
+
+        // Create a new workbook and worksheet
+        const worksheet = XLSX.utils.json_to_sheet(excelData);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Inventory List");
+
+        // Auto-size columns for better formatting
+        const max_name_width = excelData.reduce((w, r) => Math.max(w, r['Item Name'].length), 20);
+        worksheet['!cols'] = [
+            { wch: max_name_width + 2 }, // Item Name
+            { wch: 15 }, // Category
+            { wch: 20 }, // Buying Price
+            { wch: 20 }, // Selling Price
+            { wch: 15 }, // Stock Quantity
+            { wch: 30 }  // Potential Profit
+        ];
+
+        // Generate Excel file and trigger download
+        const dateStr = new Date().toISOString().split('T')[0];
+        XLSX.writeFile(workbook, `Litaj_Hardware_Inventory_${dateStr}.xlsx`);
+        
+    } catch (err) {
+        console.error("Export to Excel failed:", err);
+        alert("Failed to export Excel. Please check console for details.");
+    } finally {
+        btn.innerText = originalText;
+        btn.disabled = false;
+    }
+});
+
+window.openEditWizard = async (id) => {
+    // 1. Find the item to see its name and parent_id
+    const selected = allInventory.find(i => i.id === id);
+    if (!selected) return;
+
+    // 2. Fetch the entire family tree. We fetch everything to reconstruct the tree locally easily
+    const { data: allItems } = await supabase.from('inventory').select('*');
+    
+    // Find the absolute root
+    let root = selected;
+    while(root.parent_id) {
+        const p = allItems.find(i => i.id === root.parent_id);
+        if(p) root = p; else break; // safety
     }
 
-    document.getElementById('modal-product').classList.remove('hidden');
-}
-
-function closeModal() {
-    document.getElementById('modal-product')?.classList.add('hidden');
-    editingItemId = null;
-}
-
-function bindModalHandlers() {
-    document.getElementById('btn-add-product')?.addEventListener('click', () => openModal());
-    document.getElementById('btn-close-modal')?.addEventListener('click', closeModal);
-
-    // Live margin preview
-    ['prod-bp', 'prod-sp'].forEach(id => {
-        document.getElementById(id)?.addEventListener('input', updateMarginPreview);
-    });
-}
-
-function updateMarginPreview() {
-    const bp     = parseFloat(document.getElementById('prod-bp')?.value || 0);
-    const sp     = parseFloat(document.getElementById('prod-sp')?.value || 0);
-    const margin = sp - bp;
-    const el     = document.getElementById('margin-preview');
-    if (el) {
-        el.textContent = formatKsh(margin);
-        el.className   = `text-sm font-black font-mono ${margin >= 0 ? 'text-emerald-700' : 'text-red-600'}`;
+    // Now gather descendants linearly (Tier 4 down to Tier 1)
+    // Actually, root is the top level (e.g. Carton). Let's trace down.
+    let current = root;
+    let family = [current];
+    while(true) {
+        const child = allItems.find(i => i.parent_id === current.id);
+        if(child) {
+            family.push(child);
+            current = child;
+        } else {
+            break;
+        }
     }
-}
 
-// ── Form Submit ───────────────────────────────────────────────
-function bindFormSubmit() {
-    document.getElementById('form-product')?.addEventListener('submit', async e => {
-        e.preventDefault();
-        const errEl  = document.getElementById('form-error');
-        const btn    = document.getElementById('btn-save-product');
-        errEl.classList.add('hidden');
+    // Now family array has the items from Top Tier to Base Tier.
+    // We reverse it to map to Tier 1, 2, 3, 4 where Tier 1 is Base
+    family.reverse();
 
-        // Layer 01: Client-side validation
-        const name = document.getElementById('prod-name').value.trim();
-        const sp   = parseFloat(document.getElementById('prod-sp').value);
-        const bp   = parseFloat(document.getElementById('prod-bp').value);
-        if (!name)          { showError(errEl, 'Product name is required.'); return; }
-        if (isNaN(sp) || sp < 0) { showError(errEl, 'Selling price must be 0 or greater.'); return; }
-        if (isNaN(bp) || bp < 0) { showError(errEl, 'Buying price must be 0 or greater.'); return; }
+    const t1 = family[0] || {};
+    const t2 = family[1] || null;
+    const t3 = family[2] || null;
+    const t4 = family[3] || null;
 
-        btn.disabled     = true;
-        btn.textContent  = 'Saving...';
+    // We reuse the showModal HTML but pre-fill it!
+    showModal('Edit Packaging Hierarchy', `
+        <div class="space-y-4 max-h-[70vh] overflow-y-auto pr-2" id="pkg-wizard-form">
+            <!-- Section 1: Core Info -->
+            <div class="p-4 bg-slate-50 border border-slate-200 rounded-xl">
+                <h3 class="text-sm font-bold text-slate-800 mb-3 uppercase tracking-wide">1. Core Product Info</h3>
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="col-span-2">
+                        <label class="block text-xs font-semibold mb-1">Base Name (Optional)</label>
+                        <input type="text" id="wiz-name" class="w-full border rounded-lg px-3 py-2 text-sm" value="${t1.name || ''}">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold mb-1">Type</label>
+                        <select id="wiz-type" class="w-full border rounded-lg px-3 py-2 text-sm">
+                            <option value="fixed" ${t1.type === 'fixed' ? 'selected' : ''}>Fixed Price</option>
+                            <option value="variable" ${t1.type === 'variable' ? 'selected' : ''}>Variable Price</option>
+                        </select>
+                    </div>
+                    <div class="flex items-center pt-5">
+                        <input type="checkbox" id="wiz-is-service" class="mr-2 h-4 w-4" ${t1.is_service ? 'checked' : ''}>
+                        <label class="text-xs font-semibold">Is Service</label>
+                    </div>
+                </div>
+            </div>
 
-        const payload = {
-            name,
-            category:        document.getElementById('prod-category').value,
-            unit_of_measure: document.getElementById('prod-uom').value,
-            buying_price:    bp,
-            selling_price:   sp,
-            stock_quantity:  parseFloat(document.getElementById('prod-stock').value) || 0,
-            min_threshold:   parseFloat(document.getElementById('prod-min').value) || 5,
-            barcode:         document.getElementById('prod-barcode').value.trim() || null,
-            is_quick_add:    document.getElementById('prod-quickadd').checked
+            <!-- Tier 1 -->
+            <div class="p-4 bg-orange-50 border border-orange-100 rounded-xl">
+                <h3 class="text-sm font-bold text-orange-800 mb-3 uppercase tracking-wide">2. Tier 1: Base Retail Unit</h3>
+                <div class="grid grid-cols-3 gap-3">
+                    <div class="col-span-3">
+                        <label class="block text-xs font-semibold mb-1">Product Name</label>
+                        <input type="text" id="wiz-t1-mod" class="w-full border rounded-lg px-3 py-2 text-sm" value="${t1.name || ''}">
+                    </div>
+                    <div><label class="block text-xs font-semibold mb-1">Cost Price</label><input type="number" id="wiz-t1-cp" class="w-full border rounded-lg px-3 py-2 text-sm" value="${t1.buying_price||0}"></div>
+                    <div><label class="block text-xs font-semibold mb-1">Sell Price</label><input type="number" id="wiz-t1-sp" class="w-full border rounded-lg px-3 py-2 text-sm" value="${t1.selling_price||0}"></div>
+                    <div><label class="block text-xs font-semibold mb-1">Initial Stock (Pieces)</label><input type="number" id="wiz-t1-stock" class="w-full border rounded-lg px-3 py-2 text-sm" value="${t1.stock_quantity||0}"></div>
+                </div>
+            </div>
+
+            <!-- Tier 2 -->
+            <div class="p-4 bg-slate-50 border border-slate-200 rounded-xl">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="text-sm font-bold text-slate-800 uppercase tracking-wide">3. Tier 2</h3>
+                    <div class="flex items-center">
+                        <input type="checkbox" id="wiz-t2-en" class="mr-2 h-4 w-4 text-orange-600 rounded" onchange="document.getElementById('t2-body').classList.toggle('hidden', !this.checked)" ${t2 ? 'checked' : ''}>
+                        <label class="text-xs font-bold text-orange-600">Enable Tier 2</label>
+                    </div>
+                </div>
+                <div id="t2-body" class="${t2 ? '' : 'hidden'} grid grid-cols-4 gap-3">
+                    <div class="col-span-4"><label class="block text-xs font-semibold mb-1">Product Name</label><input type="text" id="wiz-t2-mod" class="w-full border rounded-lg px-3 py-2 text-sm" value="${t2?.name || ''}"></div>
+                    <div><label class="block text-xs font-bold text-orange-700 mb-1">Total Pieces in ONE Tier 1 (Base)</label><input type="number" id="wiz-t2-units" class="w-full border-2 border-orange-300 rounded-lg px-3 py-2 text-sm font-bold" value="${t1.units_per_parent || 1}"></div>
+                    <div><label class="block text-xs font-semibold mb-1">Cost Price</label><input type="number" id="wiz-t2-cp" class="w-full border rounded-lg px-3 py-2 text-sm" value="${t2?.buying_price||0}"></div>
+                    <div><label class="block text-xs font-semibold mb-1">Sell Price</label><input type="number" id="wiz-t2-sp" class="w-full border rounded-lg px-3 py-2 text-sm" value="${t2?.selling_price||0}"></div>
+                    <div><label class="block text-xs font-semibold mb-1">Bulk Stock</label><input type="number" id="wiz-t2-stock" class="w-full border rounded-lg px-3 py-2 text-sm" value="${t2?.stock_quantity||0}"></div>
+                </div>
+            </div>
+            
+            <!-- Tier 3 -->
+            <div class="p-4 bg-slate-50 border border-slate-200 rounded-xl">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="text-sm font-bold text-slate-800 uppercase tracking-wide">4. Tier 3</h3>
+                    <div class="flex items-center">
+                        <input type="checkbox" id="wiz-t3-en" class="mr-2 h-4 w-4 text-orange-600 rounded" onchange="document.getElementById('t3-body').classList.toggle('hidden', !this.checked)" ${t3 ? 'checked' : ''}>
+                        <label class="text-xs font-bold text-orange-600">Enable Tier 3</label>
+                    </div>
+                </div>
+                <div id="t3-body" class="${t3 ? '' : 'hidden'} grid grid-cols-4 gap-3">
+                    <div class="col-span-4"><label class="block text-xs font-semibold mb-1">Product Name</label><input type="text" id="wiz-t3-mod" class="w-full border rounded-lg px-3 py-2 text-sm" value="${t3?.name || ''}"></div>
+                    <div><label class="block text-xs font-bold text-orange-700 mb-1">Total Pieces in ONE Tier 2</label><input type="number" id="wiz-t3-units" class="w-full border-2 border-orange-300 rounded-lg px-3 py-2 text-sm font-bold" value="${t2?.units_per_parent || 1}"></div>
+                    <div><label class="block text-xs font-semibold mb-1">Cost Price</label><input type="number" id="wiz-t3-cp" class="w-full border rounded-lg px-3 py-2 text-sm" value="${t3?.buying_price||0}"></div>
+                    <div><label class="block text-xs font-semibold mb-1">Sell Price</label><input type="number" id="wiz-t3-sp" class="w-full border rounded-lg px-3 py-2 text-sm" value="${t3?.selling_price||0}"></div>
+                    <div><label class="block text-xs font-semibold mb-1">Bulk Stock</label><input type="number" id="wiz-t3-stock" class="w-full border rounded-lg px-3 py-2 text-sm" value="${t3?.stock_quantity||0}"></div>
+                </div>
+            </div>
+            
+            <!-- Tier 4 -->
+            <div class="p-4 bg-slate-50 border border-slate-200 rounded-xl">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="text-sm font-bold text-slate-800 uppercase tracking-wide">5. Tier 4</h3>
+                    <div class="flex items-center">
+                        <input type="checkbox" id="wiz-t4-en" class="mr-2 h-4 w-4 text-orange-600 rounded" onchange="document.getElementById('t4-body').classList.toggle('hidden', !this.checked)" ${t4 ? 'checked' : ''}>
+                        <label class="text-xs font-bold text-orange-600">Enable Tier 4</label>
+                    </div>
+                </div>
+                <div id="t4-body" class="${t4 ? '' : 'hidden'} grid grid-cols-4 gap-3">
+                    <div class="col-span-4"><label class="block text-xs font-semibold mb-1">Product Name</label><input type="text" id="wiz-t4-mod" class="w-full border rounded-lg px-3 py-2 text-sm" value="${t4?.name || ''}"></div>
+                    <div><label class="block text-xs font-bold text-orange-700 mb-1">Total Pieces in ONE Tier 3</label><input type="number" id="wiz-t4-units" class="w-full border-2 border-orange-300 rounded-lg px-3 py-2 text-sm font-bold" value="${t3?.units_per_parent || 1}"></div>
+                    <div><label class="block text-xs font-semibold mb-1">Cost Price</label><input type="number" id="wiz-t4-cp" class="w-full border rounded-lg px-3 py-2 text-sm" value="${t4?.buying_price||0}"></div>
+                    <div><label class="block text-xs font-semibold mb-1">Sell Price</label><input type="number" id="wiz-t4-sp" class="w-full border rounded-lg px-3 py-2 text-sm" value="${t4?.selling_price||0}"></div>
+                    <div><label class="block text-xs font-semibold mb-1">Bulk Stock</label><input type="number" id="wiz-t4-stock" class="w-full border rounded-lg px-3 py-2 text-sm" value="${t4?.stock_quantity||0}"></div>
+                </div>
+            </div>
+        </div>
+    `, async (close) => {
+        const type = document.getElementById('wiz-type').value;
+        const isService = document.getElementById('wiz-is-service').checked;
+
+        let t4_enabled = document.getElementById('wiz-t4-en').checked;
+        let t4_payload = t4_enabled ? {
+            name: document.getElementById('wiz-t4-mod').value,
+            type, is_service: isService, tier_level: 4,
+            buying_price: parseFloat(document.getElementById('wiz-t4-cp').value||0),
+            selling_price: parseFloat(document.getElementById('wiz-t4-sp').value||0),
+            stock_quantity: parseInt(document.getElementById('wiz-t4-stock').value||0),
+            _my_units: parseInt(document.getElementById('wiz-t4-units').value||1),
+            id: t4 ? t4.id : null
+        } : null;
+
+        let t3_enabled = document.getElementById('wiz-t3-en').checked;
+        let t3_payload = t3_enabled ? {
+            name: document.getElementById('wiz-t3-mod').value,
+            type, is_service: isService, tier_level: 3,
+            buying_price: parseFloat(document.getElementById('wiz-t3-cp').value||0),
+            selling_price: parseFloat(document.getElementById('wiz-t3-sp').value||0),
+            stock_quantity: parseInt(document.getElementById('wiz-t3-stock').value||0),
+            _my_units: parseInt(document.getElementById('wiz-t3-units').value||1),
+            id: t3 ? t3.id : null
+        } : null;
+
+        let t2_enabled = document.getElementById('wiz-t2-en').checked;
+        let t2_payload = t2_enabled ? {
+            name: document.getElementById('wiz-t2-mod').value,
+            type, is_service: isService, tier_level: 2,
+            buying_price: parseFloat(document.getElementById('wiz-t2-cp').value||0),
+            selling_price: parseFloat(document.getElementById('wiz-t2-sp').value||0),
+            stock_quantity: parseInt(document.getElementById('wiz-t2-stock').value||0),
+            _my_units: parseInt(document.getElementById('wiz-t2-units').value||1),
+            id: t2 ? t2.id : null
+        } : null;
+
+        let t1_payload = {
+            name: document.getElementById('wiz-t1-mod').value,
+            type, is_service: isService, tier_level: 1,
+            buying_price: parseFloat(document.getElementById('wiz-t1-cp').value||0),
+            selling_price: parseFloat(document.getElementById('wiz-t1-sp').value||0),
+            stock_quantity: parseInt(document.getElementById('wiz-t1-stock').value||0),
+            id: t1 ? t1.id : null
         };
 
+        const btn = document.getElementById('modal-btn-confirm');
+        if(btn) { btn.innerText = 'Updating...'; btn.disabled = true; }
+
         try {
-            if (editingItemId) {
-                const { error } = await supabase.from('inventory').update(payload).eq('id', editingItemId);
-                if (error) throw error;
-                showToast('Product updated!', 'success');
-            } else {
-                const { error } = await supabase.from('inventory').insert([payload]);
-                if (error) throw error;
-                showToast('Product added!', 'success');
+            if (!t4_enabled && t4) await supabase.from('inventory').delete().eq('id', t4.id);
+            if (!t3_enabled && t3) await supabase.from('inventory').delete().eq('id', t3.id);
+            if (!t2_enabled && t2) await supabase.from('inventory').delete().eq('id', t2.id);
+
+            const tiers = [t4_payload, t3_payload, t2_payload, t1_payload].filter(t => t !== null);
+            let lastParentId = null;
+
+            for (let i = 0; i < tiers.length; i++) {
+                const t = tiers[i];
+                if (!t.name) throw new Error("Product names cannot be empty.");
+                
+                const p = {
+                    name: t.name,
+                    type: t.type,
+                    is_service: t.is_service,
+                    tier_level: t.tier_level,
+                    buying_price: t.buying_price,
+                    selling_price: t.selling_price,
+                    stock_quantity: t.stock_quantity,
+                    parent_id: lastParentId
+                };
+                
+                if (i > 0) {
+                    p.units_per_parent = tiers[i-1]._my_units || 1;
+                } else {
+                    p.units_per_parent = 1;
+                }
+                
+                if (t.id) {
+                    const { error } = await supabase.from('inventory').update(p).eq('id', t.id);
+                    if (error) throw error;
+                    lastParentId = t.id;
+                } else {
+                    const { data, error } = await supabase.from('inventory').insert([p]).select().single();
+                    if (error) throw error;
+                    lastParentId = data.id;
+                }
             }
-            closeModal();
-            await loadInventory();
-        } catch (err) {
-            showError(errEl, err.message);
-        } finally {
-            btn.disabled    = false;
-            btn.textContent = 'Save Product';
+
+            close();
+            load();
+        } catch (e) {
+            alert("Error updating hierarchy: " + e.message);
+            if(btn) { btn.innerText = 'Update Hierarchy'; btn.disabled = false; }
         }
-    });
-}
-
-function showError(el, msg) {
-    el.textContent = msg;
-    el.classList.remove('hidden');
-}
-
-// ── Delete ────────────────────────────────────────────────────
-async function deleteProduct(id) {
-    if (!confirm('Delete this product? This cannot be undone.')) return;
-    const { error } = await supabase.from('inventory').delete().eq('id', id);
-    if (error) { showToast('Cannot delete: ' + error.message, 'error'); return; }
-    showToast('Product deleted.', 'warning');
-    await loadInventory();
-}
-
-// ── Excel Export ──────────────────────────────────────────────
-function bindExport() {
-    document.getElementById('btn-export-excel')?.addEventListener('click', () => {
-        if (!inventoryList.length) { showToast('No data to export', 'warning'); return; }
-        const rows = inventoryList.map(i => ({
-            'Product Name':      i.name,
-            'Category':          i.category,
-            'Unit':              i.unit_of_measure,
-            'Stock Qty':         i.stock_quantity,
-            'Low Alert At':      i.min_threshold,
-            'Buying Price (Ksh)': i.buying_price,
-            'Selling Price (Ksh)': i.selling_price,
-            'Margin (Ksh)':      Number(i.selling_price) - Number(i.buying_price),
-            'Quick Add':         i.is_quick_add ? 'Yes' : 'No',
-            'Barcode':           i.barcode || ''
-        }));
-        const ws = XLSX.utils.json_to_sheet(rows);
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, 'Litaj Hardware Inventory');
-        XLSX.writeFile(wb, `Litaj_Inventory_${new Date().toISOString().slice(0, 10)}.xlsx`);
-        showToast('Excel file downloaded!', 'success');
-    });
-}
+    }, 'Update Hierarchy', 'max-w-4xl');
+};

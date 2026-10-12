@@ -1,266 +1,205 @@
-/**
- * Litaj Hardware POS — Admin Dashboard Controller
- * Handles executive financials, expenses tracking, staff accounts, and store settings.
- */
-
-import { supabase, requireAuth, currentUser, formatKsh, showToast } from './supabaseClient.js';
-
-// Verify authentication and role
+import { supabase, currentUser, requireAuth } from './supabaseClient.js';
+import { showModal } from './uiHelper.js';
 requireAuth();
+if (currentUser.role !== 'admin') window.location.href = '/pos.html';
 
-if (currentUser && currentUser.role !== 'admin' && currentUser.role !== 'manager') {
-    alert('Access restricted. Admin credentials required.');
-    window.location.replace('/pos.html');
-}
+let inventoryItems = [];
 
-let expensesList = [];
-let staffList = [];
+async function load() {
+    const d = new Date(), ym = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    const periodStr = document.getElementById('admin-period').value;
+    let dateFilter = periodStr === 'month' ? ym : d.toISOString().split('T')[0];
+    
+    // Header Totals
+    let sQuery = supabase.from('sales_log').select('*').eq('is_voided', false);
+    if(periodStr === 'month') sQuery = sQuery.gte('timestamp', `${dateFilter}-01T00:00:00Z`);
+    else sQuery = sQuery.gte('timestamp', `${dateFilter}T00:00:00Z`);
+    
+    const {data:s} = await sQuery;
+    let gr=0, kyo=0; (s||[]).forEach(x=> { gr += x.total_charged; kyo += (x.kyocera_pages||0); });
+    document.getElementById('hdr-gross').innerText = `Ksh ${gr.toFixed(2)}`;
+    
+    // Fetch Overheads
+    const {data:o} = await supabase.from('overhead_entries').select('*').eq('period', ym).maybeSingle();
+    let ovTotal = 0;
+    if(o) { 
+        ovTotal = o.rent + o.electricity + o.wifi_internet + o.other_fixed;
+        document.getElementById('ov-rent').value = o.rent; 
+        document.getElementById('ov-elec').value = o.electricity;
+        document.getElementById('ov-wifi').value = o.wifi_internet;
+        document.getElementById('ov-other').value = o.other_fixed;
+    }
+    
+    // Fetch Wages
+    const {data:w} = await supabase.from('attendance_log').select('*').like('work_date', `${ym}%`);
+    let wageTotal = 0; (w||[]).forEach(x => wageTotal += parseFloat(x.wage_assigned||0));
 
-document.addEventListener('DOMContentLoaded', async () => {
-    bindTabs();
-    bindModals();
-    bindForms();
-    await refreshAll();
+    const expenses = ovTotal + wageTotal + (kyo * 2.5);
+    document.getElementById('hdr-expenses').innerText = `Ksh ${expenses.toFixed(2)}`;
+    document.getElementById('hdr-net').innerText = `Ksh ${(gr - expenses).toFixed(2)}`;
 
-    document.getElementById('filter-period')?.addEventListener('change', loadFinancialMetrics);
-    document.getElementById('btn-refresh-admin')?.addEventListener('click', refreshAll);
-});
+    // Resources Tab (Active)
+    const {data:r} = await supabase.from('resources').select('*').eq('status','active');
+    const rt = document.getElementById('res-tbody'); rt.innerHTML = '';
+    (r||[]).forEach(x=> {
+        rt.innerHTML += `<tr class="hover:bg-slate-50 border-b border-slate-100"><td class="py-2 px-3 font-medium">${x.name} <span class="text-xs text-slate-400">(${x.units}x)</span></td><td class="py-2 px-3 text-right font-bold text-red-600">${x.cost.toFixed(2)}</td><td class="py-2 px-3 text-slate-500">${new Date(x.opened_at).toLocaleDateString()}</td><td class="py-2 px-3 text-center"><button onclick="exhaust('${x.id}')" class="bg-slate-200 hover:bg-slate-300 text-slate-700 px-3 py-1 rounded text-xs font-bold">Exhaust</button></td></tr>`;
+    });
 
-async function refreshAll() {
-    await Promise.all([
-        loadFinancialMetrics(),
-        loadExpenses(),
-        loadStaff(),
-        loadSettings()
-    ]);
-}
+        // Populate Inventory Data
+    const {data:inv} = await supabase.from('inventory').select('*').eq('is_service', false).order('name');
+    inventoryItems = inv || [];
 
-// ── Tab Navigation ──────────────────────────────────────────
-function bindTabs() {
-    document.querySelectorAll('.tab-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            document.querySelectorAll('.tab-btn').forEach(b => {
-                b.classList.remove('border-b-2', 'border-orange-600', 'text-orange-600');
-                b.classList.add('text-slate-500');
-            });
-            btn.classList.add('border-b-2', 'border-orange-600', 'text-orange-600');
-            btn.classList.remove('text-slate-500');
+    // Wages Tab
+    const {data: ws} = await supabase.from('sales_log').select('cashier_id, timestamp, users(username)').gte('timestamp', `${ym}-01T00:00:00Z`);
+    const shifts = {};
+    (ws||[]).forEach(x => {
+        const date = x.timestamp.split('T')[0];
+        const key = `${date}_${x.cashier_id}`;
+        if(!shifts[key]) shifts[key] = { date, userId: x.cashier_id, user: x.users?.username, count: 0 };
+        shifts[key].count++;
+    });
+    const wageMap = {}; 
+    (w||[]).forEach(x => {
+        wageMap[`${x.work_date}_${x.user_id}`] = x.wage_assigned;
+        const key = `${x.work_date}_${x.user_id}`;
+        if (!shifts[key]) {
+            shifts[key] = { date: x.work_date, userId: x.user_id, user: 'Unknown (Logged)', count: 0 };
+            // Optional: We can fetch the username if we query it, but attendance_log doesn't have a join on users yet.
+            // Let's just do a basic fallback or we can query users separately.
+        }
+    });
 
-            document.querySelectorAll('.tab-content').forEach(p => p.classList.add('hidden'));
-            const targetId = btn.dataset.tab;
-            document.getElementById(targetId)?.classList.remove('hidden');
-        });
+    // Let's try to map user IDs to names just in case
+    const {data: allUsers} = await supabase.from('users').select('id, username');
+    const userDict = {};
+    (allUsers||[]).forEach(u => userDict[u.id] = u.username);
+    Object.values(shifts).forEach(sh => {
+        if (sh.user === 'Unknown (Logged)' || !sh.user) {
+            sh.user = userDict[sh.userId] || 'Unknown';
+        }
+    });
+
+    const wt = document.getElementById('wage-tbody'); wt.innerHTML = '';
+    Object.values(shifts).sort((a,b)=>b.date.localeCompare(a.date)).forEach(sh => {
+        const wage = wageMap[`${sh.date}_${sh.userId}`] || 0;
+        wt.innerHTML += `<tr class="hover:bg-slate-50 border-b border-slate-100"><td class="py-2 px-3">${sh.date}</td><td class="py-2 px-3 font-medium">${sh.user}</td><td class="py-2 px-3 text-right font-bold text-amber-600">${parseFloat(wage).toFixed(2)}</td><td class="py-2 px-3 text-center"><button onclick="openWageModal('${sh.userId}', '${sh.date}', '${sh.user}', ${wage})" class="bg-amber-100 hover:bg-amber-200 text-amber-800 px-3 py-1 rounded font-bold text-xs">Set Wage</button></td></tr>`;
     });
 }
 
-// ── Financial Metrics ───────────────────────────────────────
-async function loadFinancialMetrics() {
-    const period = document.getElementById('filter-period')?.value || 'month';
-    const now = new Date();
-    let startDate = null;
-
-    if (period === 'today') {
-        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
-    } else if (period === 'week') {
-        const lastWeek = new Date();
-        lastWeek.setDate(lastWeek.getDate() - 7);
-        startDate = lastWeek.toISOString();
-    } else if (period === 'month') {
-        startDate = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-    }
-
-    // Query sales
-    let salesQuery = supabase
-        .from('sales_log')
-        .select('total_charged, calculated_profit, is_voided')
-        .eq('is_voided', false);
-
-    if (startDate) {
-        salesQuery = salesQuery.gte('created_at', startDate);
-    }
-
-    // Query expenses
-    let expQuery = supabase
-        .from('expenses')
-        .select('amount');
-
-    if (startDate) {
-        expQuery = expQuery.gte('created_at', startDate);
-    }
-
-    const [salesRes, expRes] = await Promise.all([salesQuery, expQuery]);
-
-    const sales = salesRes.data || [];
-    const expenses = expRes.data || [];
-
-    const grossRevenue = sales.reduce((sum, s) => sum + Number(s.total_charged), 0);
-    const grossMargin = sales.reduce((sum, s) => sum + Number(s.calculated_profit), 0);
-    const totalExpenses = expenses.reduce((sum, e) => sum + Number(e.amount), 0);
-    const netProfit = grossMargin - totalExpenses;
-
-    document.getElementById('stat-revenue').textContent = formatKsh(grossRevenue);
-    document.getElementById('stat-sales-count').textContent = sales.length;
-    document.getElementById('stat-margin').textContent = formatKsh(grossMargin);
-    document.getElementById('stat-expenses').textContent = formatKsh(totalExpenses);
-    document.getElementById('stat-expenses-count').textContent = expenses.length;
-
-    const netEl = document.getElementById('stat-net-profit');
-    if (netEl) {
-        netEl.textContent = formatKsh(netProfit);
-        netEl.className = `text-2xl font-black ${netProfit >= 0 ? 'text-white' : 'text-amber-200'}`;
+function calcResCost() {
+    const id = document.getElementById('res-item-id').value;
+    const qty = parseInt(document.getElementById('res-qty').value || 1);
+    const item = inventoryItems.find(i => i.id === id);
+    if(item) {
+        document.getElementById('res-cost').value = item.buying_price * qty;
+    } else {
+        document.getElementById('res-cost').value = '';
     }
 }
 
-// ── Operating Expenses ──────────────────────────────────────
-async function loadExpenses() {
-    const { data, error } = await supabase
-        .from('expenses')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-    expensesList = data || [];
-    const tbody = document.getElementById('expenses-table-body');
-    if (!tbody) return;
-
-    if (!expensesList.length) {
-        tbody.innerHTML = `<tr><td colspan="4" class="text-center py-8 text-slate-400 text-sm">No expenses recorded yet.</td></tr>`;
+document.getElementById('res-item-search').addEventListener('input', (e) => {
+    const term = e.target.value.toLowerCase();
+    const resDiv = document.getElementById('res-search-results');
+    document.getElementById('res-item-id').value = '';
+    document.getElementById('res-cost').value = '';
+    
+    if(!term) {
+        resDiv.classList.add('hidden');
         return;
     }
+    
+    const matches = inventoryItems.filter(i => i.name.toLowerCase().includes(term));
+    if(matches.length === 0) {
+        resDiv.innerHTML = '<div class="p-2 text-sm text-gray-500">No items found</div>';
+    } else {
+        resDiv.innerHTML = matches.map(i => `<div class="p-2 text-sm cursor-pointer hover:bg-orange-50 border-b" onclick="selectResItem('${i.id}', '${i.name.replace(/'/g, "\\'")}')"><div class="font-bold">${i.name}</div><div class="text-xs text-gray-500">Stock: ${i.stock_quantity} | BP: ${i.buying_price}</div></div>`).join('');
+    }
+    resDiv.classList.remove('hidden');
+});
 
-    tbody.innerHTML = expensesList.map(exp => `
-        <tr class="border-b border-slate-50 hover:bg-orange-50/20">
-            <td class="py-3 px-4 text-xs text-slate-500 font-mono">${new Date(exp.created_at).toLocaleDateString()}</td>
-            <td class="py-3 px-4"><span class="px-2 py-0.5 rounded-md text-xs font-semibold bg-slate-100 text-slate-700">${exp.category}</span></td>
-            <td class="py-3 px-4 font-semibold text-slate-800">${exp.description}</td>
-            <td class="py-3 px-4 text-right font-mono font-bold text-red-600">${formatKsh(exp.amount)}</td>
-        </tr>
-    `).join('');
-}
+window.selectResItem = (id, name) => {
+    document.getElementById('res-item-id').value = id;
+    document.getElementById('res-item-search').value = name;
+    document.getElementById('res-search-results').classList.add('hidden');
+    calcResCost();
+};
 
-// ── Staff Management ─────────────────────────────────────────
-async function loadStaff() {
-    const { data } = await supabase
-        .from('users')
-        .select('id, username, full_name, role, pin, created_at')
-        .order('full_name');
+document.addEventListener('click', (e) => {
+    if(!e.target.closest('#res-item-search') && !e.target.closest('#res-search-results')) {
+        const res = document.getElementById('res-search-results');
+        if(res) res.classList.add('hidden');
+    }
+});
 
-    staffList = data || [];
-    const tbody = document.getElementById('staff-table-body');
-    if (!tbody) return;
+document.getElementById('res-qty').addEventListener('input', calcResCost);
 
-    tbody.innerHTML = staffList.map(u => `
-        <tr class="border-b border-slate-50 hover:bg-orange-50/20">
-            <td class="py-3 px-4 font-bold text-slate-800">${u.full_name}</td>
-            <td class="py-3 px-4 font-mono text-slate-600 text-xs">${u.username}</td>
-            <td class="py-3 px-4"><span class="px-2.5 py-1 rounded-full text-xs font-bold uppercase ${u.role === 'admin' ? 'bg-orange-100 text-orange-700' : 'bg-slate-100 text-slate-700'}">${u.role}</span></td>
-            <td class="py-3 px-4 text-center font-mono text-xs text-slate-400">••••</td>
-            <td class="py-3 px-4 text-center">
-                ${u.username !== 'admin' ? `<button data-id="${u.id}" class="text-xs text-red-500 hover:text-red-700 font-bold btn-del-user">Delete</button>` : '<span class="text-xs text-slate-300">Protected</span>'}
-            </td>
-        </tr>
-    `).join('');
+document.getElementById('admin-period').addEventListener('change', load);
 
-    tbody.querySelectorAll('.btn-del-user').forEach(btn => {
-        btn.addEventListener('click', () => deleteUser(btn.dataset.id));
-    });
-}
+document.getElementById('btn-open-res').addEventListener('click', async () => {
+    const itemId = document.getElementById('res-item-id').value;
+    const qty = parseInt(document.getElementById('res-qty').value || 1);
+    const item = inventoryItems.find(i => i.id === itemId);
+    
+    if(!item || qty < 1) return alert('Select a valid item and quantity.');
+    
+    const cost = item.buying_price * qty;
+    const name = item.name;
 
-async function deleteUser(userId) {
-    if (!confirm('Are you sure you want to remove this staff user?')) return;
-    const { error } = await supabase.from('users').delete().eq('id', userId);
-    if (error) { showToast('Cannot delete user: ' + error.message, 'error'); return; }
-    showToast('Staff user removed.', 'success');
-    await loadStaff();
-}
+    showModal('Open Resource', `
+        <p>Open <strong>${qty}x ${name}</strong> for use?</p>
+        <p class="text-sm text-slate-500 mt-2">This will log <strong>Ksh ${cost}</strong> in expenses and deduct <strong>${qty}</strong> from inventory stock.</p>
+    `, async (close) => {
+        // 1. Insert into resources
+        await supabase.from('resources').insert([{name, units: qty, cost, opened_by: currentUser.id}]);
+        // 2. Deduct from inventory
+        await supabase.from('inventory').update({stock_quantity: item.stock_quantity - qty}).eq('id', item.id);
+        
+        document.getElementById('res-item-search').value = '';
+        document.getElementById('res-qty').value = 1;
+        document.getElementById('res-cost').value = '';
+        close();
+        load();
+    }, 'Confirm & Open');
+});
 
-// ── Store Settings ───────────────────────────────────────────
-async function loadSettings() {
-    const { data } = await supabase.from('settings').select('*');
-    if (!data) return;
+document.getElementById('btn-save-ov').addEventListener('click', async () => {
+    const d = new Date(), ym = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    const rent = parseFloat(document.getElementById('ov-rent').value||0);
+    const elec = parseFloat(document.getElementById('ov-elec').value||0);
+    const wifi = parseFloat(document.getElementById('ov-wifi').value||0);
+    const other = parseFloat(document.getElementById('ov-other').value||0);
+    await supabase.from('overhead_entries').upsert({period: ym, rent, electricity: elec, wifi_internet: wifi, other_fixed: other, entered_by: currentUser.id}, {onConflict: 'period'});
+    showModal('Success', '<p class="text-emerald-600 font-medium">Overheads saved for this month.</p>', (close) => close(), 'OK');
+    load();
+});
 
-    const map = {};
-    data.forEach(s => map[s.key] = s.value);
+window.exhaust = (id) => {
+    showModal('Exhaust Resource', '<p class="text-slate-600">Mark this resource as fully used?</p>', async (close) => {
+        await supabase.from('resources').update({status:'exhausted'}).eq('id',id);
+        close(); load();
+    }, 'Mark Exhausted');
+};
 
-    if (map.company_name) document.getElementById('set-company').value = map.company_name;
-    if (map.phone_contact) document.getElementById('set-phone').value = map.phone_contact;
-    if (map.currency_symbol) document.getElementById('set-currency').value = map.currency_symbol;
-    if (map.location_address) document.getElementById('set-address').value = map.location_address;
-    if (map.receipt_footer) document.getElementById('set-footer').value = map.receipt_footer;
-}
+window.openWageModal = (userId, date, username, currentWage) => {
+    showModal(
+        `Set Wage for ${username}`, 
+        `
+        <div class="mb-2 text-sm text-slate-500">Date: <strong>${date}</strong></div>
+        <label class="block text-sm font-semibold mb-1">Daily Wage (Ksh)</label>
+        <input type="number" id="modal-wage-input" class="w-full border border-slate-300 rounded-lg px-4 py-2 font-bold text-lg" value="${currentWage}">
+        `,
+        async (close) => {
+            const val = parseFloat(document.getElementById('modal-wage-input').value || 0);
+            await supabase.from('attendance_log').upsert({user_id: userId, work_date: date, wage_assigned: val}, {onConflict: 'user_id, work_date'});
+            close(); load();
+        },
+        'Save Wage'
+    );
+};
 
-// ── Forms & Modals ───────────────────────────────────────────
-function bindModals() {
-    // Expense modal
-    document.getElementById('btn-add-expense')?.addEventListener('click', () => {
-        document.getElementById('form-expense').reset();
-        document.getElementById('modal-expense').classList.remove('hidden');
-    });
-    document.getElementById('btn-close-expense-modal')?.addEventListener('click', () => {
-        document.getElementById('modal-expense').classList.add('hidden');
-    });
+load();
 
-    // User modal
-    document.getElementById('btn-add-user')?.addEventListener('click', () => {
-        document.getElementById('form-user').reset();
-        document.getElementById('modal-user').classList.remove('hidden');
-    });
-    document.getElementById('btn-close-user-modal')?.addEventListener('click', () => {
-        document.getElementById('modal-user').classList.add('hidden');
-    });
-}
 
-function bindForms() {
-    // Expense submission
-    document.getElementById('form-expense')?.addEventListener('submit', async e => {
-        e.preventDefault();
-        const payload = {
-            category: document.getElementById('exp-category').value,
-            description: document.getElementById('exp-desc').value.trim(),
-            amount: parseFloat(document.getElementById('exp-amount').value),
-            recorded_by: currentUser?.id || null
-        };
 
-        const { error } = await supabase.from('expenses').insert([payload]);
-        if (error) { showToast('Error saving expense: ' + error.message, 'error'); return; }
 
-        showToast('Expense recorded!', 'success');
-        document.getElementById('modal-expense').classList.add('hidden');
-        await refreshAll();
-    });
 
-    // User submission
-    document.getElementById('form-user')?.addEventListener('submit', async e => {
-        e.preventDefault();
-        const payload = {
-            full_name: document.getElementById('usr-fullname').value.trim(),
-            username: document.getElementById('usr-username').value.trim().toLowerCase(),
-            role: document.getElementById('usr-role').value,
-            pin: document.getElementById('usr-pin').value.trim()
-        };
-
-        const { error } = await supabase.from('users').insert([payload]);
-        if (error) { showToast('Error adding user: ' + error.message, 'error'); return; }
-
-        showToast('Staff user added!', 'success');
-        document.getElementById('modal-user').classList.add('hidden');
-        await loadStaff();
-    });
-
-    // Settings save
-    document.getElementById('form-settings')?.addEventListener('submit', async e => {
-        e.preventDefault();
-        const updates = [
-            { key: 'company_name', value: document.getElementById('set-company').value.trim() },
-            { key: 'phone_contact', value: document.getElementById('set-phone').value.trim() },
-            { key: 'currency_symbol', value: document.getElementById('set-currency').value.trim() },
-            { key: 'location_address', value: document.getElementById('set-address').value.trim() },
-            { key: 'receipt_footer', value: document.getElementById('set-footer').value.trim() }
-        ];
-
-        for (const item of updates) {
-            await supabase.from('settings').upsert(item);
-        }
-
-        showToast('Store settings saved successfully!', 'success');
-    });
-}

@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Analytics | Litaj Hardware</title>
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#1e293b">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+    <style>
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        body { animation: fadeIn 0.2s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(2px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen flex flex-col font-sans text-gray-800">
+
+    <nav class="bg-slate-900 text-white shadow-md flex-shrink-0 relative z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-14">
+                <div class="flex items-center">
+                    <span class="text-xl font-bold text-orange-400">Litaj Hardware</span>
+                </div>
+                <!-- Mobile menu button -->
+                <div class="flex md:hidden">
+                    <button id="mobile-menu-btn" class="text-gray-300 hover:text-white focus:outline-none p-2">
+                        <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+                        </svg>
+                    </button>
+                </div>
+                <!-- Desktop menu -->
+                <div class="hidden md:flex space-x-2">
+                    <a href="/pos.html" class="px-3 py-1.5 text-sm font-medium rounded bg-slate-700 hover:bg-slate-600">POS</a>
+                    <a href="/inventory.html" class="px-3 py-1.5 text-sm font-medium rounded bg-slate-700 hover:bg-slate-600">Inventory</a>
+                    <a href="/customers.html" class="px-3 py-1.5 text-sm font-medium rounded admin-only hidden bg-slate-700 hover:bg-slate-600">Customers</a>
+                    <a href="/users.html" class="px-3 py-1.5 text-sm font-medium rounded admin-only hidden bg-slate-700 hover:bg-slate-600">Users</a>
+                    <a href="/admin.html" class="px-3 py-1.5 text-sm font-medium rounded admin-only hidden bg-slate-700 hover:bg-slate-600">Admin</a>
+                    <a href="/analytics.html" class="px-3 py-1.5 text-sm font-medium rounded admin-only hidden bg-orange-600">Analytics</a>
+                    <a href="/settings.html" class="px-3 py-1.5 text-sm font-medium rounded bg-slate-700 hover:bg-slate-600">Settings</a>
+                    <a href="/profile.html" class="px-3 py-1.5 text-sm font-medium rounded bg-slate-700 hover:bg-slate-600">Profile</a><button id="btn-logout" class="px-3 py-1.5 text-sm font-medium rounded border border-slate-600 hover:bg-slate-800 text-red-400">Logout</button>
+                </div>
+            </div>
+        </div>
+        <!-- Mobile Menu -->
+        <div id="mobile-menu" class="hidden md:hidden bg-slate-800 absolute w-full left-0 top-14 shadow-xl border-t border-slate-700">
+            <div class="px-4 pt-2 pb-4 space-y-2 flex flex-col">
+                <a href="/pos.html" class="block px-3 py-2 rounded text-base font-medium bg-slate-700 hover:bg-slate-600">POS</a>
+                <a href="/inventory.html" class="block px-3 py-2 rounded text-base font-medium bg-slate-700 hover:bg-slate-600">Inventory</a>
+                <a href="/customers.html" class="block px-3 py-2 rounded text-base font-medium admin-only hidden bg-slate-700 hover:bg-slate-600">Customers</a>
+                <a href="/users.html" class="block px-3 py-2 rounded text-base font-medium admin-only hidden bg-slate-700 hover:bg-slate-600">Users</a>
+                <a href="/admin.html" class="block px-3 py-2 rounded text-base font-medium admin-only hidden bg-slate-700 hover:bg-slate-600">Admin</a>
+                <a href="/analytics.html" class="block px-3 py-2 rounded text-base font-medium admin-only hidden bg-orange-600">Analytics</a>
+                <a href="/settings.html" class="block px-3 py-2 rounded text-base font-medium bg-slate-700 hover:bg-slate-600">Settings</a>
+                <a href="/profile.html" class="block px-3 py-2 rounded text-base font-medium bg-slate-700 hover:bg-slate-600">Profile</a><button id="btn-logout-mobile" class="w-full text-left block px-3 py-2 rounded text-base font-medium text-red-400 hover:bg-slate-700">Logout</button>
+            </div>
+        </div>
+    </nav>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const btn = document.getElementById('mobile-menu-btn');
+            const menu = document.getElementById('mobile-menu');
+            if(btn && menu) btn.addEventListener('click', () => menu.classList.toggle('hidden'));
+            const logoutMobile = document.getElementById('btn-logout-mobile');
+            if(logoutMobile) logoutMobile.addEventListener('click', () => document.getElementById('btn-logout')?.click());
+        });
+    </script>
+
+    <main class="flex-1 overflow-y-auto p-3 sm:p-6 max-w-7xl mx-auto w-full">
+
+        <!-- Header controls -->
+        <div class="bg-white px-4 py-3 rounded-xl shadow border mb-4">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <h1 class="text-xl font-bold text-slate-800">Analytics</h1>
+                <div class="flex flex-wrap items-center gap-2">
+                    <select id="ana-period" class="text-sm bg-slate-100 border border-slate-300 rounded px-3 py-1.5 font-semibold focus:outline-none focus:ring-2 focus:ring-orange-500">
+                        <option value="today">Today</option>
+                        <option value="month">This Month</option>
+                        <option value="custom">Specific Day</option>
+                        <option value="custom-range">Custom Range</option>
+                    </select>
+                    <input type="date" id="ana-date" class="hidden text-sm bg-slate-100 border border-slate-300 rounded px-3 py-1.5 font-semibold focus:outline-none focus:ring-2 focus:ring-orange-500">
+                    <span id="ana-date-separator" class="hidden text-sm font-semibold text-slate-500">to</span>
+                    <input type="date" id="ana-date-end" class="hidden text-sm bg-slate-100 border border-slate-300 rounded px-3 py-1.5 font-semibold focus:outline-none focus:ring-2 focus:ring-orange-500">
+                    <label class="flex items-center gap-1.5 text-xs font-semibold text-slate-700 bg-slate-50 px-2.5 py-1.5 rounded border border-slate-300 cursor-pointer hover:bg-slate-100 select-none">
+                        <input type="checkbox" id="chk-include-bulk" class="h-3.5 w-3.5 text-orange-600 rounded">
+                        <span>Bulk &amp; Fixed</span>
+                    </label>
+                    <button id="btn-dl-report" class="text-sm bg-orange-600 hover:bg-orange-700 text-white font-bold px-3 py-1.5 rounded shadow transition-colors whitespace-nowrap">↓ PDF</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- KPIs -->
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+            <div class="bg-white p-4 rounded-xl shadow text-center border">
+                <div class="text-xs font-bold text-slate-500 uppercase mb-1">Transactions</div>
+                <div id="kpi-tx" class="text-3xl font-black">0</div>
+            </div>
+            <div class="bg-white p-4 rounded-xl shadow text-center border">
+                <div class="text-xs font-bold text-slate-500 uppercase mb-1">Gross Sales</div>
+                <div id="kpi-rev" class="text-xl font-black text-slate-700">Ksh 0</div>
+            </div>
+            <div class="bg-white p-4 rounded-xl shadow text-center border relative group">
+                <div class="text-xs font-bold text-red-500 uppercase mb-1">Expenses</div>
+                <div id="kpi-exp" class="text-xl font-black text-red-600">Ksh 0</div>
+                <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-44 p-2 bg-slate-800 text-white text-xs rounded shadow-lg hidden group-hover:block z-10">
+                    Logged expenses &amp; opened resources
+                </div>
+            </div>
+            <div class="bg-white p-4 rounded-xl shadow text-center border">
+                <div class="text-xs font-bold text-orange-500 uppercase mb-1">Net Profit</div>
+                <div id="kpi-profit" class="text-xl font-black text-orange-600">Ksh 0</div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3 mb-4">
+            <div class="bg-white p-4 rounded-xl shadow text-center border">
+                <div class="text-xs font-bold text-orange-500 uppercase mb-1">Debt Issued (Bad Debt)</div>
+                <div id="kpi-debt-issued" class="text-xl font-black text-orange-600">Ksh 0</div>
+            </div>
+            <div class="bg-white p-4 rounded-xl shadow text-center border">
+                <div class="text-xs font-bold text-emerald-500 uppercase mb-1">Debt Collected (Good Debt)</div>
+                <div id="kpi-debt-collected" class="text-xl font-black text-emerald-600">Ksh 0</div>
+            </div>
+        </div>
+
+
+        <!-- Charts Row 1 -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+            <div class="bg-white p-4 rounded-xl shadow border">
+                <h2 class="text-base font-bold mb-3">Revenue by User</h2>
+                <div class="relative h-56 w-full"><canvas id="userChart"></canvas></div>
+            </div>
+            <div class="bg-white p-4 rounded-xl shadow border">
+                <h2 class="text-base font-bold mb-3">Payment Methods</h2>
+                <div class="relative h-56 w-full flex justify-center"><canvas id="methodChart"></canvas></div>
+            </div>
+        </div>
+
+        <!-- Charts Row 2 -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
+            <div class="lg:col-span-2 bg-white p-4 rounded-xl shadow border">
+                <h2 class="text-base font-bold mb-3">Top Items Sold</h2>
+                <div class="relative h-56 w-full"><canvas id="itemsChart"></canvas></div>
+            </div>
+            <div class="bg-white p-4 rounded-xl shadow border overflow-hidden flex flex-col">
+                <h2 class="text-base font-bold mb-3">User Leaderboard</h2>
+                <div class="flex-1 overflow-auto">
+                    <table class="w-full text-left text-sm">
+                        <thead class="bg-slate-50 sticky top-0">
+                            <tr><th class="py-2 px-3 text-xs font-bold text-slate-500 uppercase">User</th><th class="py-2 px-3 text-xs font-bold text-slate-500 uppercase text-right">Revenue</th></tr>
+                        </thead>
+                        <tbody id="user-tbody" class="divide-y divide-slate-100"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Expense & Deduction Breakdown (On Screen) -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+            <div class="bg-white p-4 rounded-xl shadow border">
+                <h2 class="text-base font-bold mb-3 text-slate-800">Net Profit Math</h2>
+                <div class="space-y-2 text-sm font-medium text-slate-600" id="math-breakdown">
+                    <div class="flex justify-between"><span>Gross Profit</span><span id="math-gross">Ksh 0</span></div>
+                    <div class="flex justify-between text-red-500"><span>- Wages</span><span id="math-wages">Ksh 0</span></div>
+                    <div class="flex justify-between text-red-500"><span>- Fixed Bills</span><span id="math-fixed">Ksh 0</span></div>
+                    <div class="flex justify-between text-red-500"><span>- Opened Resources</span><span id="math-resources">Ksh 0</span></div>
+                    <div class="flex justify-between text-red-500"><span>- Other Expenses</span><span id="math-other">Ksh 0</span></div>
+                    <div class="pt-2 border-t border-slate-200 flex justify-between text-orange-600 font-bold text-base mt-2">
+                        <span>Net Profit</span><span id="math-net">Ksh 0</span>
+                    </div>
+                </div>
+            </div>
+            <div class="bg-white p-4 rounded-xl shadow border overflow-hidden flex flex-col">
+                <h2 class="text-base font-bold mb-3 text-slate-800">Detailed Deductions</h2>
+                <div class="flex-1 overflow-auto">
+                    <table class="w-full text-left text-sm">
+                        <thead class="bg-slate-50 sticky top-0">
+                            <tr><th class="py-2 px-3 text-xs font-bold text-slate-500 uppercase">Item</th><th class="py-2 px-3 text-xs font-bold text-slate-500 uppercase text-right">Cost</th></tr>
+                        </thead>
+                        <tbody id="deductions-tbody" class="divide-y divide-slate-100">
+                            <tr><td colspan="2" class="py-2 px-3 text-center text-slate-400">No deductions for this period</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Low Stock Alerts -->
+        <div class="bg-white p-4 rounded-xl shadow border mb-4">
+            <h2 class="text-base font-bold mb-3 text-red-600">Low Stock Alerts (≤ 5)</h2>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-sm">
+                    <thead class="bg-slate-50 text-slate-600">
+                        <tr>
+                            <th class="py-2 px-3">Item Name</th>
+                            <th class="py-2 px-3 text-center">Remaining Stock</th>
+                            <th class="py-2 px-3 text-right">Selling Price</th>
+                        </tr>
+                    </thead>
+                    <tbody id="low-stock-tbody" class="divide-y divide-slate-100">
+                        <tr><td colspan="3" class="py-4 text-center text-slate-500 text-sm">Loading stock alerts...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script type="module" src="/js/analytics.js"></script>
+
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js')
+                    .then(reg => {
+                        console.log('[SW] Registered, scope:', reg.scope);
+                        // Check for updates when the page loads
+                        reg.update();
+                    })
+                    .catch(err => console.warn('[SW] Registration failed:', err));
+            });
+        }
+    </script>
+</body>
+</html>

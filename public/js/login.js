@@ -1,113 +1,110 @@
-/**
- * Litaj Hardware POS — Login Controller
- * Layer 01 (Frontend Foundations): Full input validation + graceful error states
- * Layer 04 (Auth): PIN auth delegated to supabaseClient.login()
- */
+import { login, checkSession, supabase } from './supabaseClient.js';
+if (checkSession()) window.location.href = '/pos.html';
 
-import { login, showToast } from './supabaseClient.js';
+let loginUser = ''; 
+let currentPin = '';
 
-let pinBuffer = '';
-const MAX_PIN = 4;
-
-// ── Build 10-key numpad dynamically ──────────────────────────
-const numpadContainer = document.querySelector('.grid.grid-cols-3');
-const keyOrder = ['1','2','3','4','5','6','7','8','9','⌫','0','✓'];
-
-numpadContainer.innerHTML = keyOrder.map(k => `
-    <button
-        class="key-btn h-14 rounded-xl font-bold text-xl transition-all
-               ${k === '✓' ? 'bg-orange-600 text-white hover:bg-orange-700 border border-orange-700 shadow-md shadow-orange-200' :
-                 k === '⌫' ? 'bg-red-50 border border-red-200 text-red-500 hover:bg-red-100' :
-                 'bg-slate-50 border border-slate-200 text-slate-800 hover:bg-orange-50 hover:border-orange-300 hover:text-orange-700'}"
-        data-key="${k}"
-    >${k}</button>
-`).join('');
-
-// ── Update PIN dots visual state ─────────────────────────────
-function updateDots() {
-    for (let i = 1; i <= MAX_PIN; i++) {
-        const dot = document.getElementById(`dot-${i}`);
-        dot?.classList.toggle('filled', i <= pinBuffer.length);
-    }
-}
-
-// ── Numpad key press handler ──────────────────────────────────
-numpadContainer.addEventListener('click', async e => {
-    const btn = e.target.closest('[data-key]');
-    if (!btn) return;
-    const key = btn.dataset.key;
-
-    if (key === '⌫') {
-        pinBuffer = pinBuffer.slice(0, -1);
-        updateDots();
-        return;
-    }
-
-    if (key === '✓') {
-        await attemptLogin();
-        return;
-    }
-
-    if (/^\d$/.test(key) && pinBuffer.length < MAX_PIN) {
-        pinBuffer += key;
-        updateDots();
-        // Auto-submit when 4 digits entered
-        if (pinBuffer.length === MAX_PIN) {
-            await attemptLogin();
+async function loadUsers() {
+    try {
+        if (!navigator.onLine) throw new Error('Offline');
+        const { data, error } = await supabase.from('users').select('id, username, role, pin').order('role');
+        if (error) throw error;
+        localStorage.setItem('litaj_users_cache', JSON.stringify(data));
+        renderUsers(data);
+    } catch (err) {
+        const cached = localStorage.getItem('litaj_users_cache');
+        if (cached) {
+            renderUsers(JSON.parse(cached));
+            document.getElementById('user-selector').insertAdjacentHTML('beforebegin', '<div class="text-xs text-center text-orange-500 mb-2 font-semibold">Offline Mode - Using Cached Users</div>');
+        } else {
+            document.getElementById('user-selector').innerHTML = '<div class="text-sm text-red-500 w-full text-center py-2">Offline & no cached users</div>';
         }
     }
-});
-
-// ── Keyboard support ─────────────────────────────────────────
-document.addEventListener('keydown', async e => {
-    if (/^\d$/.test(e.key) && pinBuffer.length < MAX_PIN) {
-        pinBuffer += e.key;
-        updateDots();
-        if (pinBuffer.length === MAX_PIN) await attemptLogin();
-    } else if (e.key === 'Backspace') {
-        pinBuffer = pinBuffer.slice(0, -1);
-        updateDots();
-    } else if (e.key === 'Enter') {
-        await attemptLogin();
-    }
-});
-
-// ── Login attempt ─────────────────────────────────────────────
-async function attemptLogin() {
-    const username = document.getElementById('inp-username').value.trim();
-    const errorEl  = document.getElementById('login-error');
-    const loadEl   = document.getElementById('login-loading');
-
-    // Validate inputs (Layer 01)
-    errorEl.classList.add('hidden');
-    if (!username) {
-        errorEl.textContent = 'Please enter your username.';
-        errorEl.classList.remove('hidden');
-        return;
-    }
-    if (pinBuffer.length < 4) {
-        errorEl.textContent = 'Please enter your 4-digit PIN.';
-        errorEl.classList.remove('hidden');
-        return;
-    }
-
-    loadEl.classList.remove('hidden');
-
-    const result = await login(username, pinBuffer);
-
-    loadEl.classList.add('hidden');
-
-    if (!result.success) {
-        errorEl.textContent = result.message || 'Invalid credentials.';
-        errorEl.classList.remove('hidden');
-        // Reset PIN on failure
-        pinBuffer = '';
-        updateDots();
-        return;
-    }
-
-    showToast(`Welcome, ${result.user.full_name}!`, 'success');
-    setTimeout(() => {
-        window.location.replace('/pos.html');
-    }, 600);
 }
+
+function renderUsers(data) {
+    const selector = document.getElementById('user-selector');
+    selector.innerHTML = '';
+    
+    data.forEach((u, idx) => {
+        if(idx === 0) loginUser = u.username;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.dataset.user = u.username;
+        btn.className = idx === 0 
+            ? "user-btn flex-1 py-2 rounded-lg font-semibold text-sm transition flex items-center justify-center gap-1.5 bg-white text-orange-600 shadow-sm"
+            : "user-btn flex-1 py-2 rounded-lg font-medium text-sm transition flex items-center justify-center gap-1.5 text-slate-600 hover:text-slate-900";
+        
+        const icon = u.role === 'admin' ? '🛡️' : '👤';
+        btn.innerHTML = `${icon} <span class="capitalize">${u.username}</span>`;
+        
+        btn.addEventListener('click', (e) => {
+            loginUser = e.currentTarget.dataset.user;
+            document.querySelectorAll('.user-btn').forEach(b => b.className = "user-btn flex-1 py-2 rounded-lg font-medium text-sm transition flex items-center justify-center gap-1.5 text-slate-600 hover:text-slate-900");
+            e.currentTarget.className = "user-btn flex-1 py-2 rounded-lg font-semibold text-sm transition flex items-center justify-center gap-1.5 bg-white text-orange-600 shadow-sm";
+        });
+        selector.appendChild(btn);
+    });
+}
+
+function updatePin() {
+    document.querySelectorAll('.pin-dot').forEach((dot, idx) => {
+        if (idx < currentPin.length) dot.classList.replace('border-slate-300', 'bg-orange-600');
+        else { dot.classList.remove('bg-orange-600'); dot.classList.add('border-slate-300'); }
+    });
+}
+
+document.querySelectorAll('.keypad-btn').forEach(btn => btn.addEventListener('click', (e) => {
+    const val = e.currentTarget.dataset.val; document.getElementById('login-error').classList.add('hidden');
+    if (val === 'clear') currentPin = '';
+    else if (val === 'back') currentPin = currentPin.slice(0, -1);
+    else if (currentPin.length < 4) currentPin += val;
+    updatePin();
+}));
+
+document.addEventListener('keydown', (e) => {
+    if (e.key >= '0' && e.key <= '9' && currentPin.length < 4) { currentPin += e.key; updatePin(); }
+    else if (e.key === 'Backspace') { currentPin = currentPin.slice(0, -1); updatePin(); }
+    else if (e.key.toLowerCase() === 'c' || e.key === 'Escape') { currentPin = ''; updatePin(); }
+    else if (e.key === 'Enter') processLogin();
+});
+
+document.getElementById('btn-login-submit').addEventListener('click', processLogin);
+
+async function processLogin() {
+    if (!loginUser) return alert('Please select a user');
+    if (currentPin.length < 4) return alert('Enter 4 digit PIN');
+    
+    // Disable inputs while logging in
+    document.getElementById('login-error').classList.add('hidden');
+    
+    if (!navigator.onLine) {
+        // Offline PIN verification using cached user data
+        const cachedStr = localStorage.getItem('litaj_users_cache');
+        if (cachedStr) {
+            const users = JSON.parse(cachedStr);
+            const user = users.find(u => u.username === loginUser);
+            if (user && user.pin === currentPin) {
+                // Manually set session
+                localStorage.setItem('litaj_session', JSON.stringify(user));
+                window.location.href = '/pos.html';
+                return;
+            }
+        }
+        document.getElementById('login-error').classList.remove('hidden'); 
+        currentPin = ''; 
+        updatePin(); 
+        return;
+    }
+
+    const res = await login(loginUser, currentPin);
+    if (res.success) window.location.href = '/pos.html';
+    else { 
+        document.getElementById('login-error').classList.remove('hidden'); 
+        currentPin = ''; 
+        updatePin(); 
+    }
+}
+
+// Init
+loadUsers();
