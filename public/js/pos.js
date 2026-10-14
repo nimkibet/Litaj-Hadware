@@ -1020,7 +1020,7 @@ async function processFinalSale() {
             buying_price_at_sale: item.buying_price,
             cashier_id: currentUser ? currentUser.id : null,
             customer_id: customerId,
-            payment_method: activePaymentMethod,
+            payment_method: activePaymentMethod === 'Split' ? 'Cash' : activePaymentMethod,
             amount_tendered: tenderAmt,
             change_given: changeAmt,
             notes: paymentRef || null,
@@ -1033,11 +1033,15 @@ async function processFinalSale() {
             await insertSaleWithOfflineSupport(supabase, row);
         }
 
+        // Retrieve customer object safely if customerId is provided
+        const customerObj = customerId ? (customers.find(c => c.id === customerId) || null) : null;
+
         // If debt sale, update customer's outstanding balance
-        if (activePaymentMethod === 'Debt' && customerId) {
-            const cust = customers.find(c => c.id === customerId);
-            const newBal = (parseFloat(cust?.outstanding_debt || 0)) + grandTotal;
+        if (activePaymentMethod === 'Debt' && customerId && customerObj) {
+            const currentDebt = parseFloat(customerObj.outstanding_debt || 0);
+            const newBal = currentDebt + grandTotal;
             await supabase.from('customers').update({ outstanding_debt: newBal }).eq('id', customerId);
+            customerObj.outstanding_debt = newBal;
         }
 
         // Generate PDF Doc if receipt printing is requested
@@ -1055,7 +1059,7 @@ async function processFinalSale() {
             items: completedItems,
             grandTotal,
             method: activePaymentMethod,
-            customerName: cust ? cust.name : null,
+            customerName: customerObj ? customerObj.name : null,
             tenderAmt,
             changeAmt,
             notes: paymentRef,
@@ -1142,7 +1146,7 @@ function buildReceiptPDFDoc(receiptNo, items, grandTotal, method, tendered, chan
         format: [80, 200] // Standard 80mm thermal receipt roll layout
     });
 
-    const cust = customers.find(c => c.id === customerId);
+    const cust = customerId ? (customers.find(c => c.id === customerId) || null) : null;
 
     // Header (Dynamically loaded from database settings)
     doc.setFont("helvetica", "bold");
@@ -1261,9 +1265,20 @@ function renderTodaysLedger() {
         if (!s.is_voided) {
             total += parseFloat(s.total_charged || 0);
             const m = (s.payment_method || '').toLowerCase();
-            if (m.includes('cash')) cash += parseFloat(s.total_charged || 0);
-            else if (m.includes('m-pesa') || m.includes('mpesa')) mpesa += parseFloat(s.total_charged || 0);
-            else if (m.includes('debt') || m.includes('credit')) debt += parseFloat(s.total_charged || 0);
+            if (s.notes && s.notes.includes('Cash:') && s.notes.includes('M-Pesa:')) {
+                const matchCash = s.notes.match(/Cash:\s*([\d.]+)/);
+                const matchMpesa = s.notes.match(/M-Pesa:\s*([\d.]+)/);
+                const splitC = matchCash ? parseFloat(matchCash[1]) : 0;
+                const splitM = matchMpesa ? parseFloat(matchMpesa[1]) : 0;
+                cash += splitC;
+                mpesa += splitM;
+            } else if (m.includes('cash')) {
+                cash += parseFloat(s.total_charged || 0);
+            } else if (m.includes('m-pesa') || m.includes('mpesa')) {
+                mpesa += parseFloat(s.total_charged || 0);
+            } else if (m.includes('debt') || m.includes('credit')) {
+                debt += parseFloat(s.total_charged || 0);
+            }
         }
     });
 

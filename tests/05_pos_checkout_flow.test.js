@@ -97,6 +97,102 @@ runner.test('Should validate M-PESA checkout reference and split payment math', 
     assertEqual(balance, 0.00, 'Split cash + M-Pesa must balance to exactly grand total');
 });
 
+runner.test('Should execute M-PESA sale without ref code (MPESA-VERIFIED) and assert DB state', async () => {
+    const mpesaReceiptNo = `LH-TEST-MPESA-${Date.now().toString().slice(-6)}`;
+    const grandTotal = 750.00;
+    const mpesaRow = {
+        item_id: sampleItemId,
+        receipt_no: mpesaReceiptNo,
+        calculated_qty: 1,
+        total_charged: grandTotal,
+        calculated_profit: 250.00,
+        payment_method: 'M-Pesa',
+        amount_tendered: grandTotal,
+        change_given: 0,
+        notes: 'MPESA-VERIFIED',
+        customer_id: null,
+        status: 'active'
+    };
+
+    const { error: insertErr } = await supabase.from('sales_log').insert([mpesaRow]);
+    assert(!insertErr, `M-Pesa sale insert failed: ${insertErr?.message}`);
+
+    const { data: dbRow } = await supabase.from('sales_log').select('*').eq('receipt_no', mpesaReceiptNo).single();
+    assertEqual(dbRow.payment_method, 'M-Pesa', 'Method must be M-Pesa');
+    assertEqual(dbRow.notes, 'MPESA-VERIFIED', 'Notes must record MPESA-VERIFIED');
+    assertEqual(dbRow.customer_id, null, 'Customer ID must be null for generic M-Pesa sale');
+
+    await supabase.from('sales_log').delete().eq('receipt_no', mpesaReceiptNo);
+});
+
+runner.test('Should execute SPLIT sale (Cash + M-Pesa) and assert DB state', async () => {
+    const splitReceiptNo = `LH-TEST-SPLIT-${Date.now().toString().slice(-6)}`;
+    const grandTotal = 1200.00;
+    // Database constraint allows ('Cash', 'M-Pesa', 'Debt', 'Card'). Split sales persist compliant as 'Cash' with full split notes
+    const splitRow = {
+        item_id: sampleItemId,
+        receipt_no: splitReceiptNo,
+        calculated_qty: 2,
+        total_charged: grandTotal,
+        calculated_profit: 400.00,
+        payment_method: 'Cash',
+        amount_tendered: grandTotal,
+        change_given: 0,
+        notes: 'Cash: 600 | M-Pesa: 600 (VERIFIED)',
+        customer_id: null,
+        status: 'active'
+    };
+
+    const { error: insertErr } = await supabase.from('sales_log').insert([splitRow]);
+    assert(!insertErr, `Split sale insert failed: ${insertErr?.message}`);
+
+    const { data: dbRow } = await supabase.from('sales_log').select('*').eq('receipt_no', splitReceiptNo).single();
+    assertEqual(dbRow.payment_method, 'Cash', 'Method in DB must satisfy constraint');
+    assert(dbRow.notes.includes('Cash: 600') && dbRow.notes.includes('M-Pesa: 600'), 'Split details must persist in notes');
+    assertEqual(dbRow.customer_id, null, 'Customer ID must be null for split sale');
+
+    await supabase.from('sales_log').delete().eq('receipt_no', splitReceiptNo);
+});
+
+runner.test('Should verify lastCompletedSale construction across all 4 payment modes with no cust reference error', async () => {
+    const mockCustomers = [
+        { id: 'cust-uuid-1', name: 'John Kamau', outstanding_debt: 500 }
+    ];
+
+    // Helper that replicates processFinalSale post-processing logic
+    const buildSaleCompletion = (method, customerId, grandTotal, tenderAmt, changeAmt, paymentRef) => {
+        const customerObj = customerId ? (mockCustomers.find(c => c.id === customerId) || null) : null;
+        return {
+            receiptNo: 'LH-TEST-SUCCESS',
+            items: [{ name: 'Cement', qty: 1, selling_price: grandTotal, total: grandTotal }],
+            grandTotal,
+            method,
+            customerName: customerObj ? customerObj.name : null,
+            tenderAmt,
+            changeAmt,
+            notes: paymentRef
+        };
+    };
+
+    // 1. CASH: customerId is null -> must have customerName: null and NEVER throw ReferenceError
+    const cashSale = buildSaleCompletion('Cash', null, 1000, 1000, 0, '');
+    assertEqual(cashSale.customerName, null, 'Cash sale customerName must be null without error');
+    assertEqual(cashSale.method, 'Cash', 'Method must be Cash');
+
+    // 2. M-PESA: customerId is null -> must have customerName: null
+    const mpesaSale = buildSaleCompletion('M-Pesa', null, 1000, 1000, 0, 'MPESA-VERIFIED');
+    assertEqual(mpesaSale.customerName, null, 'M-Pesa sale customerName must be null without error');
+    assertEqual(mpesaSale.notes, 'MPESA-VERIFIED', 'Notes must be MPESA-VERIFIED');
+
+    // 3. SPLIT: customerId is null -> must have customerName: null
+    const splitSale = buildSaleCompletion('Split', null, 1000, 1000, 0, 'Cash: 500 | M-Pesa: 500');
+    assertEqual(splitSale.customerName, null, 'Split sale customerName must be null without error');
+
+    // 4. DEBT: customerId is valid -> must resolve customer name
+    const debtSale = buildSaleCompletion('Debt', 'cust-uuid-1', 1000, 0, 0, '');
+    assertEqual(debtSale.customerName, 'John Kamau', 'Debt sale customerName must resolve to customer name');
+});
+
 runner.test('Should assert receipt generation checkbox defaults to UNCHECKED (no automatic receipt)', async () => {
     // In POS system, receipt checkbox defaults to unchecked
     const defaultCheckboxState = false;
