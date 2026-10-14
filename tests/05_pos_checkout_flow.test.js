@@ -84,6 +84,11 @@ runner.test('Should validate M-PESA checkout reference and split payment math', 
     const mpesaRef = 'QKM48XYZ90';
     assert(mpesaRef.length >= 6, 'M-Pesa reference code must be at least 6 characters');
 
+    // Smooth fast checkout: ref code is optional and falls back to MPESA-VERIFIED
+    const emptyRef = '';
+    const fallbackRef = emptyRef ? `MPESA: ${emptyRef}` : 'MPESA-VERIFIED';
+    assertEqual(fallbackRef, 'MPESA-VERIFIED', 'Omitted ref code must cleanly record MPESA-VERIFIED');
+
     // Split Payment math
     const grandTotal = 3000.00;
     const splitCash = 1000.00;

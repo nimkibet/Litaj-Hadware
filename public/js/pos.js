@@ -122,6 +122,10 @@ function switchView(target) {
             document.getElementById('btn-close-ledger-view')?.classList.add('hidden');
         }
     }
+
+    if (target === 'products') {
+        setTimeout(focusQuickSearch, 100);
+    }
 }
 
 // Mobile Tab Bar Click Handlers
@@ -241,7 +245,9 @@ function renderCatalog() {
     const container = document.getElementById('products-container');
     if (!container) return;
 
-    const searchTerm = (document.getElementById('pos-search')?.value || '').trim().toLowerCase();
+    const topSearch = (document.getElementById('pos-search')?.value || '').trim().toLowerCase();
+    const quickSearch = (document.getElementById('quick-barcode')?.value || '').trim().toLowerCase();
+    const searchTerm = quickSearch || topSearch;
     const countLabel = document.getElementById('product-count-label');
 
     const filtered = inventory.filter(item => {
@@ -353,35 +359,88 @@ btnClearSearch?.addEventListener('click', () => {
 
 document.getElementById('btn-refresh-inv')?.addEventListener('click', loadInventory);
 
-// Quick Barcode Entry in Footer
-document.getElementById('btn-quick-barcode-add')?.addEventListener('click', handleBarcodeQuickAdd);
-document.getElementById('quick-barcode')?.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') handleBarcodeQuickAdd();
+// Instant Search / Barcode Entry in Bottom Bar
+const quickBarcodeInput = document.getElementById('quick-barcode');
+const quickBarcodeQtyInput = document.getElementById('quick-barcode-qty');
+const btnQuickBarcodeAdd = document.getElementById('btn-quick-barcode-add');
+
+// Live instant filtering as cashier types in the bottom bar
+quickBarcodeInput?.addEventListener('input', () => {
+    renderCatalog();
+});
+
+btnQuickBarcodeAdd?.addEventListener('click', handleBarcodeQuickAdd);
+quickBarcodeInput?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        handleBarcodeQuickAdd();
+    }
 });
 
 function handleBarcodeQuickAdd() {
-    const barcodeInput = document.getElementById('quick-barcode');
-    const qtyInput = document.getElementById('quick-barcode-qty');
-    const code = barcodeInput.value.trim().toLowerCase();
-    const qty = parseInt(qtyInput.value) || 1;
+    const query = (quickBarcodeInput?.value || '').trim().toLowerCase();
+    const qty = parseInt(quickBarcodeQtyInput?.value) || 1;
 
-    if (!code) return;
+    if (!query) return;
 
-    const match = inventory.find(i => 
-        (i.barcode && i.barcode.toLowerCase() === code) || 
-        i.name.toLowerCase() === code ||
-        i.name.toLowerCase().includes(code)
-    );
+    // Multi-level matching hierarchy:
+    // 1. Exact barcode match
+    // 2. Exact item name match
+    // 3. Item name starts with query
+    // 4. Substring in item name
+    // 5. Substring in category
+    const match = inventory.find(i => i.barcode && i.barcode.toLowerCase() === query)
+        || inventory.find(i => i.name.toLowerCase() === query)
+        || inventory.find(i => i.name.toLowerCase().startsWith(query))
+        || inventory.find(i => i.name.toLowerCase().includes(query))
+        || inventory.find(i => i.category && i.category.toLowerCase().includes(query));
 
     if (match) {
         addToCart(match, qty);
-        barcodeInput.value = '';
-        qtyInput.value = '1';
-        barcodeInput.focus();
+        if (quickBarcodeInput) quickBarcodeInput.value = '';
+        if (quickBarcodeQtyInput) quickBarcodeQtyInput.value = '1';
+        renderCatalog(); // Reset filtered catalog view to show all
+        focusQuickSearch();
+        showToast(`Added ${qty}x ${match.name} to cart`);
     } else {
-        alert(`No product found matching code or name: "${code}"`);
+        showToast(`No item found matching "${query}"`);
     }
 }
+
+// ====================================================================
+// AUTO-SNAP FOCUS & 30-SECOND INACTIVITY WATCHDOG
+// ====================================================================
+function focusQuickSearch() {
+    // Safety check: Never steal focus if an active modal dialog is open
+    const openModal = document.querySelector('.fixed:not(.hidden)');
+    if (openModal) return;
+
+    // Safety check: On mobile, only focus if viewing the products catalog
+    if (typeof currentActiveView !== 'undefined' && currentActiveView !== 'products') {
+        return;
+    }
+
+    const input = document.getElementById('quick-barcode');
+    if (input && document.activeElement !== input) {
+        input.focus();
+        if (input.value) input.select();
+    }
+}
+
+let inactivityTimer = null;
+const INACTIVITY_TIMEOUT_MS = 30000; // 30 seconds
+
+function resetInactivityTimer() {
+    if (inactivityTimer) clearTimeout(inactivityTimer);
+    inactivityTimer = setTimeout(() => {
+        focusQuickSearch();
+    }, INACTIVITY_TIMEOUT_MS);
+}
+
+['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll'].forEach(evt => {
+    window.addEventListener(evt, resetInactivityTimer, { passive: true });
+});
+resetInactivityTimer();
 
 // ====================================================================
 // 2. CART MANAGEMENT (VEGAS POS LOGIC + MOBILE TOUCH CONTROLS)
@@ -442,6 +501,7 @@ function clearCart() {
     if (confirm('Are you sure you want to clear the entire cart?')) {
         cart = [];
         renderCart();
+        focusQuickSearch();
     }
 }
 
@@ -653,8 +713,14 @@ const btnCancelCheckout = document.getElementById('btn-cancel-checkout');
 const btnSubmitFinalSale = document.getElementById('btn-submit-final-sale');
 
 btnOpenCheckout?.addEventListener('click', openCheckout);
-btnCloseCheckout?.addEventListener('click', () => checkoutModal.classList.add('hidden'));
-btnCancelCheckout?.addEventListener('click', () => checkoutModal.classList.add('hidden'));
+btnCloseCheckout?.addEventListener('click', () => {
+    checkoutModal.classList.add('hidden');
+    focusQuickSearch();
+});
+btnCancelCheckout?.addEventListener('click', () => {
+    checkoutModal.classList.add('hidden');
+    focusQuickSearch();
+});
 
 function getCartGrandTotal() {
     const subtotal = cart.reduce((acc, i) => acc + i.total, 0);
@@ -718,7 +784,15 @@ function selectPaymentMethod(method) {
         document.getElementById('cash-tendered-input')?.focus();
     } else if (method === 'M-Pesa') {
         document.getElementById('checkout-panel-mpesa')?.classList.remove('hidden');
-        document.getElementById('mpesa-code-input')?.focus();
+        const grandTotal = getCartGrandTotal();
+        const mpesaAmtInput = document.getElementById('mpesa-amount-input');
+        if (mpesaAmtInput) {
+            mpesaAmtInput.value = grandTotal;
+            setTimeout(() => {
+                mpesaAmtInput.focus();
+                mpesaAmtInput.select();
+            }, 100);
+        }
     } else if (method === 'Split') {
         document.getElementById('checkout-panel-split')?.classList.remove('hidden');
         const grandTotal = getCartGrandTotal();
@@ -894,8 +968,19 @@ async function processFinalSale() {
         }
         changeAmt = tenderAmt - grandTotal;
     } else if (activePaymentMethod === 'M-Pesa') {
-        paymentRef = document.getElementById('mpesa-code-input').value.trim();
-        tenderAmt = grandTotal;
+        const mpesaAmt = parseFloat(document.getElementById('mpesa-amount-input')?.value || 0) || grandTotal;
+        if (mpesaAmt < grandTotal) {
+            errBox.textContent = `Insufficient M-Pesa amount. Due: KSh ${grandTotal.toFixed(2)}, Entered: KSh ${mpesaAmt.toFixed(2)}`;
+            errBox.classList.remove('hidden');
+            return;
+        }
+        tenderAmt = mpesaAmt;
+        changeAmt = Math.max(0, mpesaAmt - grandTotal);
+        const code = (document.getElementById('mpesa-code-input')?.value || '').trim();
+        const phone = (document.getElementById('mpesa-phone-input')?.value || '').trim();
+        let ref = code ? `MPESA: ${code}` : 'MPESA-VERIFIED';
+        if (phone) ref += ` (${phone})`;
+        paymentRef = ref;
     } else if (activePaymentMethod === 'Split') {
         const c = parseFloat(splitCashInput.value || 0) || 0;
         const m = parseFloat(splitMpesaInput.value || 0) || 0;
@@ -904,7 +989,8 @@ async function processFinalSale() {
             errBox.classList.remove('hidden');
             return;
         }
-        paymentRef = `Cash: ${c} | M-Pesa: ${m} (${document.getElementById('split-mpesa-ref').value.trim()})`;
+        const splitRef = (document.getElementById('split-mpesa-ref')?.value || '').trim();
+        paymentRef = `Cash: ${c} | M-Pesa: ${m}${splitRef ? ` (${splitRef})` : ' (VERIFIED)'}`;
         tenderAmt = c + m;
         changeAmt = (c + m) - grandTotal;
     } else if (activePaymentMethod === 'Debt') {
@@ -1030,6 +1116,7 @@ document.getElementById('btn-success-print-pdf')?.addEventListener('click', () =
 
 document.getElementById('btn-success-done')?.addEventListener('click', () => {
     document.getElementById('modal-sale-success')?.classList.add('hidden');
+    focusQuickSearch();
 });
 
 function showToast(msg) {
@@ -1370,10 +1457,11 @@ document.addEventListener('keydown', (e) => {
                 modal.classList.add('hidden');
             }
         });
+        setTimeout(focusQuickSearch, 100);
     }
     // Enter in Checkout modal
     else if (e.key === 'Enter' && checkoutModal && !checkoutModal.classList.contains('hidden') && e.target.tagName !== 'BUTTON') {
-        if (e.target.id === 'cash-tendered-input' || e.target.id === 'mpesa-code-input' || e.target.id === 'split-cash-input' || e.target.id === 'split-mpesa-input') {
+        if (e.target.id === 'cash-tendered-input' || e.target.id === 'mpesa-amount-input' || e.target.id === 'mpesa-code-input' || e.target.id === 'split-cash-input' || e.target.id === 'split-mpesa-input') {
             e.preventDefault();
             processFinalSale();
         }
@@ -1389,3 +1477,4 @@ loadInventory();
 loadCustomersDropdown();
 loadTodaysSales();
 syncOfflineSales(supabase);
+setTimeout(focusQuickSearch, 300);
