@@ -1,528 +1,1529 @@
 import { supabase, currentUser, requireAuth } from './supabaseClient.js';
+
+// Enforce Auth and Administrator Boundaries
 requireAuth();
-if (currentUser && currentUser.role !== 'admin') window.location.href = '/pos.html';
+if (currentUser && currentUser.role !== 'admin') {
+    window.location.href = '/pos.html';
+}
 
-let currentSalesData = [];
-let currentResources = [];
-let currentOverheads = [];
-let currentDailyExpenses = [];
-let currentAttendanceWages = [];
-let currentTotalExpenses = 0;
-let currentLowStock = [];
-let lowStockExpanded = false;
-let periodStr = 'today';
+// --------------------------------------------------------------------
+// Application State
+// --------------------------------------------------------------------
+let rawSalesRows = [];
+let receiptGroupsList = [];
+let debtIssuedReceipts = [];
+let debtCollectionReceipts = [];
+let groupedProductsMatrix = [];
+let cashiersPerformanceList = [];
+let lowStockList = [];
+let storeSettings = {
+    company_name: 'Litaj Hardware',
+    phone_contact: '+254 700 000 000',
+    location_address: 'Main Hardware Yard, Commercial Street',
+    currency_symbol: 'Ksh',
+    receipt_footer: 'Thank you for building with Litaj Hardware!'
+};
+let registeredUsers = [];
 
-let userChartInstance = null;
-let methodChartInstance = null;
-let itemsChartInstance = null;
+// Filter State
+let selectedPeriod = 'today';
+let selectedDateStart = '';
+let selectedDateEnd = '';
+let selectedCashier = 'all';
+let productsSearchTerm = '';
 
-async function load() {
-    periodStr = document.getElementById('ana-period').value;
+// Chart.js Instances
+let chartPaymentInstance = null;
+let chartItemsInstance = null;
+let chartCashiersInstance = null;
+
+// --------------------------------------------------------------------
+// UI Initialization & Navigation Setup
+// --------------------------------------------------------------------
+document.addEventListener('DOMContentLoaded', () => {
+    initNavigation();
+    initFilterControls();
+    initTabNavigation();
+    loadDashboard();
+});
+
+function initNavigation() {
+    // Show admin-only links for administrator users
+    if (currentUser?.role === 'admin') {
+        document.querySelectorAll('.admin-only').forEach(el => el.classList.remove('hidden'));
+    }
+
+    // Mobile Menu Toggle
+    const mobileMenuBtn = document.getElementById('mobile-menu-btn');
+    const mobileMenu = document.getElementById('mobile-menu');
+    const mobileMenuChevron = document.getElementById('mobile-menu-chevron');
+
+    if (mobileMenuBtn && mobileMenu) {
+        mobileMenuBtn.addEventListener('click', () => {
+            const isHidden = mobileMenu.classList.contains('hidden');
+            if (isHidden) {
+                mobileMenu.classList.remove('hidden');
+                mobileMenuChevron?.classList.add('rotate-180');
+            } else {
+                mobileMenu.classList.add('hidden');
+                mobileMenuChevron?.classList.remove('rotate-180');
+            }
+        });
+    }
+
+    // Collapsible Other Menus in Mobile Drawer
+    const toggleOtherBtn = document.getElementById('toggle-other-menus-btn');
+    const collapsibleOther = document.getElementById('collapsible-other-menus');
+    const chevronOther = document.getElementById('chevron-other-menus');
+
+    if (toggleOtherBtn && collapsibleOther) {
+        toggleOtherBtn.addEventListener('click', () => {
+            const isHidden = collapsibleOther.classList.contains('hidden');
+            if (isHidden) {
+                collapsibleOther.classList.remove('hidden');
+                chevronOther?.classList.add('rotate-180');
+            } else {
+                collapsibleOther.classList.add('hidden');
+                chevronOther?.classList.remove('rotate-180');
+            }
+        });
+    }
+
+    // Logout Handlers
+    const handleLogout = async () => {
+        if (!confirm('Are you sure you want to sign out of Litaj Hardware POS?')) return;
+        localStorage.removeItem('lh_user');
+        sessionStorage.clear();
+        await supabase.auth.signOut().catch(() => {});
+        window.location.href = '/index.html';
+    };
+
+    document.getElementById('btn-logout')?.addEventListener('click', handleLogout);
+    document.getElementById('btn-logout-mobile')?.addEventListener('click', handleLogout);
+}
+
+function initFilterControls() {
+    const periodSelect = document.getElementById('ana-period');
+    const customContainer = document.getElementById('ana-custom-dates-container');
     const dateInput = document.getElementById('ana-date');
     const dateInputEnd = document.getElementById('ana-date-end');
     const dateSeparator = document.getElementById('ana-date-separator');
-    
-    if (periodStr === 'custom' || periodStr === 'custom-range') {
-        dateInput.classList.remove('hidden');
-        if (!dateInput.value) {
-            dateInput.value = new Date().toISOString().split('T')[0];
-        }
-        if (periodStr === 'custom-range') {
-            dateInputEnd.classList.remove('hidden');
-            dateSeparator.classList.remove('hidden');
-            if (!dateInputEnd.value) {
-                dateInputEnd.value = new Date().toISOString().split('T')[0];
-            }
+    const cashierFilter = document.getElementById('ana-cashier-filter');
+    const btnRefresh = document.getElementById('btn-refresh-analytics');
+    const btnPdf = document.getElementById('btn-dl-report');
+    const searchProducts = document.getElementById('input-search-products');
+
+    // Default dates to today's local YYYY-MM-DD
+    const todayStr = getLocalDateString(new Date());
+    if (dateInput) dateInput.value = todayStr;
+    if (dateInputEnd) dateInputEnd.value = todayStr;
+
+    periodSelect?.addEventListener('change', () => {
+        selectedPeriod = periodSelect.value;
+        if (selectedPeriod === 'custom') {
+            customContainer?.classList.remove('hidden');
+            dateInput?.classList.remove('hidden');
+            dateInputEnd?.classList.add('hidden');
+            dateSeparator?.classList.add('hidden');
+        } else if (selectedPeriod === 'custom-range') {
+            customContainer?.classList.remove('hidden');
+            dateInput?.classList.remove('hidden');
+            dateInputEnd?.classList.remove('hidden');
+            dateSeparator?.classList.remove('hidden');
         } else {
-            dateInputEnd.classList.add('hidden');
-            dateSeparator.classList.add('hidden');
+            customContainer?.classList.add('hidden');
         }
-    } else {
-        dateInput.classList.add('hidden');
-        if(dateInputEnd) dateInputEnd.classList.add('hidden');
-        if(dateSeparator) dateSeparator.classList.add('hidden');
-    }
+        loadDashboard();
+    });
 
-    const d = (periodStr === 'custom' || periodStr === 'custom-range') && dateInput.value ? new Date(dateInput.value) : new Date();
-    const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    let dateFilter = periodStr === 'month' ? ym : d.toISOString().split('T')[0];
-    
-    let nextDateStr;
-    if (periodStr === 'custom-range' && dateInputEnd && dateInputEnd.value) {
-        let endDate = new Date(dateInputEnd.value);
-        endDate.setDate(endDate.getDate() + 1);
-        nextDateStr = endDate.toISOString().split('T')[0];
-    } else {
-        let nextDate = new Date(d);
-        nextDate.setDate(nextDate.getDate() + 1);
-        nextDateStr = nextDate.toISOString().split('T')[0];
-    }
-
-    // 1. Fetch Sales
-    let q = supabase.from('sales_log').select('*, inventory(name), users!sales_log_cashier_id_fkey(username)').eq('is_voided', false);
-    if (periodStr === 'month') {
-        q = q.gte('timestamp', `${dateFilter}-01T00:00:00Z`).lt('timestamp', `${d.getFullYear()}-${String(d.getMonth() + 2).padStart(2, '0')}-01T00:00:00Z`); // Very rough next month, ideally just do basic like original
-    } else {
-        q = q.gte('timestamp', `${dateFilter}T00:00:00Z`).lt('timestamp', `${nextDateStr}T00:00:00Z`);
-    }
-
-    // 2. Fetch Opened Resources
-    let resQ = supabase.from('resources').select('name, cost, status');
-    if (periodStr === 'month') resQ = resQ.gte('opened_at', `${dateFilter}-01T00:00:00Z`);
-    else resQ = resQ.gte('opened_at', `${dateFilter}T00:00:00Z`).lt('opened_at', `${nextDateStr}T00:00:00Z`);
-
-    // 3. Fetch Fixed Overheads
-    let ovQ = supabase.from('overhead_entries').select('rent, electricity, wifi_internet, other_fixed');
-    if (periodStr === 'month') ovQ = ovQ.eq('period', ym);
-    else ovQ = ovQ.gte('created_at', `${dateFilter}T00:00:00Z`).lt('created_at', `${nextDateStr}T00:00:00Z`);
-
-    // 4. Fetch Daily Expenses
-    let expQ = supabase.from('expenses').select('description, amount');
-    if (periodStr === 'month') expQ = expQ.gte('timestamp', `${dateFilter}-01T00:00:00Z`);
-    else expQ = expQ.gte('timestamp', `${dateFilter}T00:00:00Z`).lt('timestamp', `${nextDateStr}T00:00:00Z`);
-
-    // 5. Fetch Attendance Wages
-    let attQ = supabase.from('attendance_log').select('wage_assigned, users(username)');
-    if (periodStr === 'month') attQ = attQ.like('work_date', `${ym}%`);
-    else if (periodStr === 'custom-range') attQ = attQ.gte('work_date', dateFilter).lt('work_date', nextDateStr);
-    else attQ = attQ.eq('work_date', dateFilter);
-
-    const [ {data: s}, {data: resData}, {data: ovData}, {data: expData}, {data: attData}, {data: lowStockData} ] = await Promise.all([
-        q, resQ, ovQ, expQ, attQ,
-        supabase.from('inventory').select('name, stock_quantity, selling_price').lte('stock_quantity', 5).order('stock_quantity', { ascending: true })
-    ]);
-    
-    currentLowStock = lowStockData || [];
-    renderLowStock();
-    
-    currentSalesData = s || [];
-    currentResources = resData || [];
-    currentOverheads = ovData || [];
-    currentDailyExpenses = expData || [];
-    currentAttendanceWages = attData || [];
-
-    const includeBulk = document.getElementById('chk-include-bulk').checked;
-
-    // Calculate Expenses
-    currentTotalExpenses = 0;
-    
-    // Always include daily POS expenses
-    currentDailyExpenses.forEach(e => currentTotalExpenses += (e.amount || 0));
-
-    // Attendance wages are also always included as fixed expenses
-    currentAttendanceWages.forEach(w => currentTotalExpenses += (w.wage_assigned || 0));
-
-    if (includeBulk) {
-        currentResources.forEach(r => currentTotalExpenses += (r.cost || 0));
-        currentOverheads.forEach(o => {
-            currentTotalExpenses += (o.rent || 0) + (o.electricity || 0) + (o.wifi_internet || 0) + (o.other_fixed || 0);
-        });
-    }
-
-    document.getElementById('kpi-tx').innerText = currentSalesData.length;
-    let rev = 0, grossProf = 0, debtIssued = 0, debtCollected = 0;
-    
-    const items = {};
-    const userRevenue = {};
-    const methodRevenue = { cash: 0, mpesa: 0 };
-
-    currentSalesData.forEach(x => {
-        if (x.status === 'debt_collection') {
-            debtCollected += x.total_charged;
-            // Only add to Cash or M-Pesa totals
-            if (x.payment_method === 'cash') methodRevenue.cash += x.total_charged;
-            else if (x.payment_method === 'mpesa') methodRevenue.mpesa += x.total_charged;
-            return; // Skip revenue, profit, items, users
-        }
-
-        if (x.status === 'debt') {
-            debtIssued += x.total_charged;
-        }
-
-        rev += x.total_charged;
-        grossProf += x.calculated_profit;
-        
-        const n = x.inventory?.name || 'Unknown';
-        if (!items[n]) items[n] = 0;
-        items[n] += x.calculated_qty;
-
-        const user = x.users?.username || 'Unknown';
-        if (!userRevenue[user]) userRevenue[user] = 0;
-        userRevenue[user] += x.total_charged;
-        
-        if (x.status !== 'debt') {
-            if (x.payment_method === 'cash') methodRevenue.cash += x.total_charged;
-            else if (x.payment_method === 'mpesa') methodRevenue.mpesa += x.total_charged;
+    dateInput?.addEventListener('change', () => {
+        if (selectedPeriod === 'custom' || selectedPeriod === 'custom-range') {
+            loadDashboard();
         }
     });
 
-    const netProfit = grossProf - currentTotalExpenses;
-
-    document.getElementById('kpi-rev').innerText = `Ksh ${rev.toLocaleString(undefined, {maximumFractionDigits:0})}`;
-    document.getElementById('kpi-exp').innerText = `Ksh ${currentTotalExpenses.toLocaleString(undefined, {maximumFractionDigits:0})}`;
-    document.getElementById('kpi-profit').innerText = `Ksh ${netProfit.toLocaleString(undefined, {maximumFractionDigits:0})}`;
-    
-    if (document.getElementById('kpi-debt-issued')) document.getElementById('kpi-debt-issued').innerText = `Ksh ${debtIssued.toLocaleString(undefined, {maximumFractionDigits:0})}`;
-    if (document.getElementById('kpi-debt-collected')) document.getElementById('kpi-debt-collected').innerText = `Ksh ${debtCollected.toLocaleString(undefined, {maximumFractionDigits:0})}`;
-
-    // Net Profit Math UI Breakdown
-    let uiWages = 0, uiOtherExp = 0, uiResources = 0, uiFixed = 0;
-    let uiDeductions = [];
-
-    currentDailyExpenses.forEach(e => {
-        const desc = e.description || 'Other';
-        if (desc.toLowerCase().includes('wage')) uiWages += (e.amount || 0);
-        else uiOtherExp += (e.amount || 0);
-        uiDeductions.push({ item: desc, cost: (e.amount || 0) });
-    });
-
-    currentAttendanceWages.forEach(w => {
-        const wageAmt = w.wage_assigned || 0;
-        uiWages += wageAmt;
-        const name = w.users?.username || 'User';
-        uiDeductions.push({ item: `[Shift Wage] ${name}`, cost: wageAmt });
-    });
-
-    if (includeBulk) {
-        currentResources.forEach(r => {
-            const cost = r.cost || 0;
-            uiResources += cost;
-            uiDeductions.push({ item: `[Opened] ${r.name || 'Resource'}`, cost });
-        });
-        currentOverheads.forEach(o => {
-            if (o.rent) { uiFixed += o.rent; uiDeductions.push({ item: '[Fixed] Rent', cost: o.rent }); }
-            if (o.electricity) { uiFixed += o.electricity; uiDeductions.push({ item: '[Fixed] Electricity', cost: o.electricity }); }
-            if (o.wifi_internet) { uiFixed += o.wifi_internet; uiDeductions.push({ item: '[Fixed] WiFi', cost: o.wifi_internet }); }
-            if (o.other_fixed) { uiFixed += o.other_fixed; uiDeductions.push({ item: '[Fixed] Other', cost: o.other_fixed }); }
-        });
-    }
-
-    document.getElementById('math-gross').innerText = `Ksh ${grossProf.toLocaleString()}`;
-    document.getElementById('math-wages').innerText = `Ksh ${uiWages.toLocaleString()}`;
-    document.getElementById('math-fixed').innerText = `Ksh ${uiFixed.toLocaleString()}`;
-    document.getElementById('math-resources').innerText = `Ksh ${uiResources.toLocaleString()}`;
-    document.getElementById('math-other').innerText = `Ksh ${uiOtherExp.toLocaleString()}`;
-    document.getElementById('math-net').innerText = `Ksh ${netProfit.toLocaleString()}`;
-
-    const dTbody = document.getElementById('deductions-tbody');
-    if (uiDeductions.length > 0) {
-        dTbody.innerHTML = uiDeductions.sort((a,b) => b.cost - a.cost).map(d => `
-            <tr>
-                <td class="py-2 px-3">${d.item}</td>
-                <td class="py-2 px-3 text-right font-semibold text-slate-800">Ksh ${d.cost.toLocaleString()}</td>
-            </tr>
-        `).join('');
-    } else {
-        dTbody.innerHTML = `<tr><td colspan="2" class="py-2 px-3 text-center text-slate-400">No deductions for this period</td></tr>`;
-    }
-
-    // Update User Leaderboard Table
-    const sortedUsers = Object.entries(userRevenue).sort((a, b) => b[1] - a[1]);
-    const utb = document.getElementById('user-tbody');
-    utb.innerHTML = '';
-    sortedUsers.forEach(u => {
-        utb.innerHTML += `<tr class="border-b border-slate-100 hover:bg-slate-50"><td class="py-2 px-3 font-medium text-slate-700 capitalize">${u[0]}</td><td class="py-2 px-3 text-right font-bold text-slate-600">Ksh ${u[1].toLocaleString(undefined, {maximumFractionDigits:0})}</td></tr>`;
-    });
-
-    // Update Charts
-    updateCharts(userRevenue, methodRevenue, items);
-}
-
-function updateCharts(userRevenue, methodRevenue, items) {
-    const sortedItems = Object.entries(items).sort((a, b) => b[1] - a[1]).slice(0, 10);
-    
-    const userCtx = document.getElementById('userChart');
-    if (userChartInstance) userChartInstance.destroy();
-    userChartInstance = new Chart(userCtx, {
-        type: 'bar',
-        data: {
-            labels: Object.keys(userRevenue).map(n => n.charAt(0).toUpperCase() + n.slice(1)),
-            datasets: [{
-                label: 'Revenue (Ksh)',
-                data: Object.values(userRevenue),
-                backgroundColor: 'rgba(59, 130, 246, 0.8)',
-                borderRadius: 4
-            }]
-        },
-        options: { responsive: true, maintainAspectRatio: false }
-    });
-
-    const methodCtx = document.getElementById('methodChart');
-    if (methodChartInstance) methodChartInstance.destroy();
-    methodChartInstance = new Chart(methodCtx, {
-        type: 'doughnut',
-        data: {
-            labels: ['M-Pesa', 'Cash'],
-            datasets: [{
-                data: [methodRevenue.mpesa, methodRevenue.cash],
-                backgroundColor: ['#10b981', '#3b82f6']
-            }]
-        },
-        options: { responsive: true, maintainAspectRatio: false }
-    });
-
-    const itemsCtx = document.getElementById('itemsChart');
-    if (itemsChartInstance) itemsChartInstance.destroy();
-    itemsChartInstance = new Chart(itemsCtx, {
-        type: 'bar',
-        data: {
-            labels: sortedItems.map(i => i[0].length > 15 ? i[0].substring(0, 15) + '...' : i[0]),
-            datasets: [{
-                label: 'Units Sold',
-                data: sortedItems.map(i => i[1]),
-                backgroundColor: 'rgba(99, 102, 241, 0.8)',
-                borderRadius: 4
-            }]
-        },
-        options: { 
-            indexAxis: 'y',
-            responsive: true, 
-            maintainAspectRatio: false 
+    dateInputEnd?.addEventListener('change', () => {
+        if (selectedPeriod === 'custom-range') {
+            loadDashboard();
         }
+    });
+
+    cashierFilter?.addEventListener('change', () => {
+        selectedCashier = cashierFilter.value;
+        loadDashboard();
+    });
+
+    btnRefresh?.addEventListener('click', () => {
+        loadDashboard();
+    });
+
+    btnPdf?.addEventListener('click', () => {
+        generateAnalyticsAuditPDF();
+    });
+
+    searchProducts?.addEventListener('input', (e) => {
+        productsSearchTerm = (e.target.value || '').trim().toLowerCase();
+        renderProductsMatrix();
     });
 }
 
-window.toggleLowStock = () => {
-    lowStockExpanded = !lowStockExpanded;
-    renderLowStock();
-};
+function initTabNavigation() {
+    const tabBtns = document.querySelectorAll('.tab-btn');
+    const tabPanes = document.querySelectorAll('.tab-pane');
 
-function renderLowStock() {
-    const lsTbody = document.getElementById('low-stock-tbody');
-    if (!currentLowStock || currentLowStock.length === 0) {
-        lsTbody.innerHTML = `<tr><td colspan="3" class="py-4 text-center text-slate-500 text-sm">All products are sufficiently stocked.</td></tr>`;
-        return;
-    }
+    tabBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const targetId = btn.getAttribute('data-tab');
 
-    const limit = lowStockExpanded ? currentLowStock.length : 5;
-    const toShow = currentLowStock.slice(0, limit);
+            // Reset tab styles
+            tabBtns.forEach(b => {
+                b.classList.remove('border-orange-600', 'bg-white', 'text-orange-600', 'shadow-sm', 'font-black');
+                b.classList.add('border-transparent', 'text-slate-600', 'font-bold');
+            });
 
-    let html = toShow.map(i => `
-        <tr>
-            <td class="py-2 px-3 font-semibold text-slate-800">${i.name}</td>
-            <td class="py-2 px-3 text-center"><span class="bg-red-100 text-red-700 px-2 py-0.5 rounded font-bold text-xs">${i.stock_quantity}</span></td>
-            <td class="py-2 px-3 text-right">Ksh ${i.selling_price}</td>
-        </tr>
-    `).join('');
+            // Activate clicked tab
+            btn.classList.add('border-orange-600', 'bg-white', 'text-orange-600', 'shadow-sm', 'font-black');
+            btn.classList.remove('border-transparent', 'text-slate-600', 'font-bold');
 
-    if (currentLowStock.length > 5) {
-        html += `
-        <tr>
-            <td colspan="3" class="py-2 text-center bg-slate-50 hover:bg-slate-100 transition-colors cursor-pointer" onclick="toggleLowStock()">
-                <button class="text-orange-600 font-bold text-sm w-full outline-none">
-                    ${lowStockExpanded ? 'Show Less' : `Show All (${currentLowStock.length})`}
-                </button>
-            </td>
-        </tr>
-        `;
-    }
-    lsTbody.innerHTML = html;
+            // Toggle panes
+            tabPanes.forEach(pane => {
+                if (pane.id === targetId) {
+                    pane.classList.remove('hidden');
+                } else {
+                    pane.classList.add('hidden');
+                }
+            });
+        });
+    });
 }
 
-document.getElementById('ana-period').addEventListener('change', load);
-document.getElementById('ana-date').addEventListener('change', load);
-document.getElementById('ana-date-end').addEventListener('change', load);
-document.getElementById('chk-include-bulk').addEventListener('change', load);
+// --------------------------------------------------------------------
+// Date Helper Functions
+// --------------------------------------------------------------------
+function getLocalDateString(d) {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
 
-document.getElementById('btn-dl-report').addEventListener('click', () => {
-    if (currentSalesData.length === 0) return alert('No data to generate report.');
-    
-    const { jsPDF } = window.jspdf;
-    const doc = new jsPDF();
-    
-    doc.setFillColor(30, 41, 59);
-    doc.rect(0, 0, 210, 30, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(20);
-    doc.setFont("helvetica", "bold");
-    doc.text("Litaj Hardware POS", 14, 20);
-    
-    const dateInput = document.getElementById('ana-date');
-    const dateInputEnd = document.getElementById('ana-date-end');
-    let dateSubtitle = "";
-    if (periodStr === 'today') {
-        dateSubtitle = `Info for ${new Date().toISOString().split('T')[0]}`;
-    } else if (periodStr === 'custom') {
-        dateSubtitle = `Info for ${dateInput.value || new Date().toISOString().split('T')[0]}`;
-    } else if (periodStr === 'month') {
-        const d2 = new Date();
-        const startOfMonth = `${d2.getFullYear()}-${String(d2.getMonth() + 1).padStart(2, '0')}-01`;
-        dateSubtitle = `Info from ${startOfMonth} to ${d2.toISOString().split('T')[0]}`;
-    } else if (periodStr === 'custom-range') {
-        const d1 = dateInput.value || new Date().toISOString().split('T')[0];
-        const d2 = dateInputEnd.value || new Date().toISOString().split('T')[0];
-        dateSubtitle = `Info from ${d1} to ${d2}`;
+function computeDateFilterBounds() {
+    const now = new Date();
+    let startISO = null;
+    let endISO = null;
+    let label = 'Today';
+
+    if (selectedPeriod === 'today') {
+        const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+        const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+        startISO = start.toISOString();
+        endISO = end.toISOString();
+        label = `Today (${getLocalDateString(now)})`;
+    } else if (selectedPeriod === 'yesterday') {
+        const y = new Date(now);
+        y.setDate(y.getDate() - 1);
+        const start = new Date(y.getFullYear(), y.getMonth(), y.getDate(), 0, 0, 0, 0);
+        const end = new Date(y.getFullYear(), y.getMonth(), y.getDate(), 23, 59, 59, 999);
+        startISO = start.toISOString();
+        endISO = end.toISOString();
+        label = `Yesterday (${getLocalDateString(y)})`;
+    } else if (selectedPeriod === 'week') {
+        const w = new Date(now);
+        w.setDate(w.getDate() - 6);
+        const start = new Date(w.getFullYear(), w.getMonth(), w.getDate(), 0, 0, 0, 0);
+        const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+        startISO = start.toISOString();
+        endISO = end.toISOString();
+        label = `Last 7 Days (${getLocalDateString(w)} to ${getLocalDateString(now)})`;
+    } else if (selectedPeriod === 'month') {
+        const start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+        const end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+        startISO = start.toISOString();
+        endISO = end.toISOString();
+        const monthName = now.toLocaleString('default', { month: 'long', year: 'numeric' });
+        label = `Month of ${monthName}`;
+    } else if (selectedPeriod === 'custom') {
+        const dateInput = document.getElementById('ana-date');
+        const val = dateInput?.value || getLocalDateString(now);
+        const parts = val.split('-');
+        const y = parseInt(parts[0], 10);
+        const m = parseInt(parts[1], 10) - 1;
+        const d = parseInt(parts[2], 10);
+        const start = new Date(y, m, d, 0, 0, 0, 0);
+        const end = new Date(y, m, d, 23, 59, 59, 999);
+        startISO = start.toISOString();
+        endISO = end.toISOString();
+        label = `Day: ${val}`;
+    } else if (selectedPeriod === 'custom-range') {
+        const d1Input = document.getElementById('ana-date');
+        const d2Input = document.getElementById('ana-date-end');
+        const v1 = d1Input?.value || getLocalDateString(now);
+        const v2 = d2Input?.value || getLocalDateString(now);
+        const p1 = v1.split('-');
+        const p2 = v2.split('-');
+        const start = new Date(parseInt(p1[0], 10), parseInt(p1[1], 10) - 1, parseInt(p1[2], 10), 0, 0, 0, 0);
+        const end = new Date(parseInt(p2[0], 10), parseInt(p2[1], 10) - 1, parseInt(p2[2], 10), 23, 59, 59, 999);
+        startISO = start.toISOString();
+        endISO = end.toISOString();
+        label = `Range: ${v1} to ${v2}`;
+    } else if (selectedPeriod === 'all') {
+        startISO = null;
+        endISO = null;
+        label = 'All Time History';
     }
-    
-    doc.setFontSize(12);
-    doc.setFont("helvetica", "normal");
-    doc.text(dateSubtitle, 196, 20, { align: "right" });
-    
-    let rev = 0, grossProf = 0, pdfDebtIssued = 0, pdfDebtCollected = 0;
-    const userTotals = {};
-    const methodTotals = { cash: 0, mpesa: 0 };
-    const itemAgg = {};
 
-    currentSalesData.forEach(x => { 
-        if (x.status === 'debt_collection') {
-            pdfDebtCollected += x.total_charged;
-            if (x.payment_method === 'cash') methodTotals.cash += x.total_charged;
-            else if (x.payment_method === 'mpesa') methodTotals.mpesa += x.total_charged;
+    return { startISO, endISO, label };
+}
+
+// --------------------------------------------------------------------
+// Main Dashboard Loader
+// --------------------------------------------------------------------
+async function loadDashboard() {
+    try {
+        const { startISO, endISO, label } = computeDateFilterBounds();
+
+        // 1. Fetch Store Settings for Branding & Reports
+        const { data: settingsData } = await supabase.from('settings').select('*');
+        if (settingsData && settingsData.length > 0) {
+            settingsData.forEach(s => {
+                if (s.key && s.value !== undefined) storeSettings[s.key] = s.value;
+            });
+        }
+
+        // 2. Fetch Users (Populate Cashier Filter if empty)
+        const { data: usersData } = await supabase.from('users').select('id, username, full_name, role').order('username');
+        if (usersData) {
+            registeredUsers = usersData;
+            populateCashierDropdown(usersData);
+        }
+
+        // 3. Fetch Low Stock Alerts (threshold <= 5)
+        const { data: lowStockData } = await supabase
+            .from('inventory')
+            .select('id, name, category, stock_quantity, buying_price, selling_price, unit_of_measure')
+            .lte('stock_quantity', 5)
+            .order('stock_quantity', { ascending: true });
+        lowStockList = lowStockData || [];
+
+        // 4. Fetch Live Sales Records
+        let query = supabase
+            .from('sales_log')
+            .select('*, inventory(id, name, category, unit_of_measure, buying_price, selling_price), users!sales_log_cashier_id_fkey(id, username, full_name), customers(id, name, phone)')
+            .eq('is_voided', false)
+            .order('timestamp', { ascending: false });
+
+        if (startISO) query = query.gte('timestamp', startISO);
+        if (endISO) query = query.lte('timestamp', endISO);
+        if (selectedCashier && selectedCashier !== 'all') {
+            query = query.eq('cashier_id', selectedCashier);
+        }
+
+        const { data: salesData, error: salesError } = await query;
+        if (salesError) {
+            console.error('[Analytics] Error fetching sales_log:', salesError);
+            alert('Failed to load sales data: ' + salesError.message);
             return;
         }
 
-        if (x.status === 'debt') {
-            pdfDebtIssued += x.total_charged;
+        rawSalesRows = salesData || [];
+
+        // Process and aggregate all metrics
+        processAggregations();
+
+        // Render Dashboard Components
+        renderKPIScorecards();
+        renderCharts();
+        renderProductsMatrix();
+        renderDebtAuditLedger();
+        renderDebtRepaymentsLedger();
+        renderCashierRoster();
+        renderLowStockWatchlist();
+
+    } catch (err) {
+        console.error('[Analytics] Unexpected error loading dashboard:', err);
+    }
+}
+
+function populateCashierDropdown(users) {
+    const select = document.getElementById('ana-cashier-filter');
+    if (!select || select.options.length > 1) return;
+
+    users.forEach(u => {
+        const opt = document.createElement('option');
+        opt.value = u.id;
+        opt.textContent = `${u.full_name || u.username} (${u.role})`;
+        select.appendChild(opt);
+    });
+}
+
+// --------------------------------------------------------------------
+// Data Aggregations & Math Engine
+// --------------------------------------------------------------------
+function processAggregations() {
+    // 1. Group by receipt_no to reconstruct shopping carts and tenders
+    const receiptMap = {};
+    rawSalesRows.forEach(row => {
+        const rNo = row.receipt_no || `ROW-${row.id}`;
+        if (!receiptMap[rNo]) {
+            receiptMap[rNo] = {
+                receipt_no: rNo,
+                timestamp: row.timestamp,
+                status: row.status,
+                payment_method: row.payment_method || 'Cash',
+                notes: row.notes || '',
+                customer: row.customers,
+                cashier_id: row.cashier_id,
+                cashier_username: row.users?.username || 'Staff',
+                cashier_name: row.users?.full_name || row.users?.username || 'Staff',
+                total_charged: 0,
+                calculated_profit: 0,
+                items: []
+            };
+        }
+        receiptMap[rNo].items.push(row);
+        receiptMap[rNo].total_charged += parseFloat(row.total_charged || 0);
+        receiptMap[rNo].calculated_profit += parseFloat(row.calculated_profit || 0);
+    });
+
+    receiptGroupsList = Object.values(receiptMap).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+    // Separate Debt Sales vs Debt Collections vs Standard Completed Sales
+    debtIssuedReceipts = receiptGroupsList.filter(r => 
+        r.status === 'debt' || (r.payment_method && r.payment_method.toLowerCase().includes('debt'))
+    );
+
+    debtCollectionReceipts = receiptGroupsList.filter(r => 
+        r.status === 'debt_collection'
+    );
+
+    // 2. Group Products Sold Matrix (exclude debt collections as they are financial pay-downs)
+    const productAggMap = {};
+    rawSalesRows.forEach(row => {
+        if (row.status === 'debt_collection') return;
+
+        const itemId = row.item_id || row.inventory?.name || row.notes || 'Unknown Item';
+        const itemName = row.inventory?.name || row.notes || 'Hardware Item';
+        const category = row.inventory?.category || 'General';
+        const unit = row.inventory?.unit_of_measure || 'pcs';
+        const qty = parseFloat(row.calculated_qty || 1);
+        const revenue = parseFloat(row.total_charged || 0);
+        const profit = parseFloat(row.calculated_profit || 0);
+        const buyingPrice = parseFloat(row.buying_price_at_sale || row.inventory?.buying_price || 0);
+        const sellingPrice = parseFloat(row.inventory?.selling_price || (qty > 0 ? (revenue / qty) : 0));
+
+        if (!productAggMap[itemId]) {
+            productAggMap[itemId] = {
+                item_id: itemId,
+                name: itemName,
+                category: category,
+                unit: unit,
+                units_sold: 0,
+                total_revenue: 0,
+                total_cogs: 0,
+                total_profit: 0,
+                unit_selling_price: sellingPrice,
+                unit_buying_price: buyingPrice
+            };
         }
 
-        rev += x.total_charged; 
-        grossProf += x.calculated_profit;
-        
-        const username = x.users?.username || 'System';
-        userTotals[username] = (userTotals[username] || 0) + x.total_charged;
-        
-        if (x.status !== 'debt') {
-            if (x.payment_method === 'cash') methodTotals.cash += x.total_charged;
-            else if (x.payment_method === 'mpesa') methodTotals.mpesa += x.total_charged;
+        productAggMap[itemId].units_sold += qty;
+        productAggMap[itemId].total_revenue += revenue;
+        productAggMap[itemId].total_cogs += (qty * buyingPrice);
+        productAggMap[itemId].total_profit += profit;
+    });
+
+    groupedProductsMatrix = Object.values(productAggMap).sort((a, b) => b.total_revenue - a.total_revenue);
+
+    // 3. Cashier Performance Aggregations
+    const cashierMap = {};
+    receiptGroupsList.forEach(r => {
+        const uId = r.cashier_id || 'unknown';
+        const uName = r.cashier_name;
+        const uUsername = r.cashier_username;
+
+        if (!cashierMap[uId]) {
+            cashierMap[uId] = {
+                id: uId,
+                name: uName,
+                username: uUsername,
+                tx_count: 0,
+                cash_collected: 0,
+                mpesa_collected: 0,
+                debt_issued: 0,
+                total_revenue: 0
+            };
         }
-        
-        const itemName = x.inventory?.name || 'Unknown';
-        if (!itemAgg[itemName]) itemAgg[itemName] = { qty: 0, revenue: 0, method: new Set(), users: new Set() };
-        itemAgg[itemName].qty += x.calculated_qty;
-        itemAgg[itemName].revenue += x.total_charged;
-        itemAgg[itemName].method.add(x.payment_method);
-        itemAgg[itemName].users.add(username);
-    });
-    
-    let wTotal = 0;
-    let dTotal = 0;
-    let expAgg = {};
-    let pdfTotalExpenses = 0;
-    
-    currentDailyExpenses.forEach(e => {
-        const desc = e.description || 'Other';
-        expAgg[desc] = (expAgg[desc] || 0) + (e.amount || 0);
-        if (desc.toLowerCase().includes('wage')) wTotal += (e.amount || 0);
-        else dTotal += (e.amount || 0);
-        pdfTotalExpenses += (e.amount || 0);
-    });
 
-    currentAttendanceWages.forEach(w => {
-        const amt = w.wage_assigned || 0;
-        const desc = `[Shift Wage] ${w.users?.username || 'User'}`;
-        expAgg[desc] = (expAgg[desc] || 0) + amt;
-        wTotal += amt;
-        pdfTotalExpenses += amt;
+        cashierMap[uId].tx_count++;
+
+        if (r.status === 'debt' || (r.payment_method && r.payment_method.toLowerCase().includes('debt'))) {
+            cashierMap[uId].debt_issued += r.total_charged;
+            cashierMap[uId].total_revenue += r.total_charged;
+        } else if (r.status === 'debt_collection') {
+            if (isCashPayment(r.payment_method)) cashierMap[uId].cash_collected += r.total_charged;
+            else if (isMpesaPayment(r.payment_method)) cashierMap[uId].mpesa_collected += r.total_charged;
+            else cashierMap[uId].cash_collected += r.total_charged;
+        } else {
+            cashierMap[uId].total_revenue += r.total_charged;
+            const splitMatch = (r.notes || '').match(/Cash:\s*([\d.]+)\s*\|\s*M-Pesa:\s*([\d.]+)/i);
+            if (splitMatch) {
+                const c = parseFloat(splitMatch[1]) || 0;
+                const m = parseFloat(splitMatch[2]) || 0;
+                cashierMap[uId].cash_collected += c;
+                cashierMap[uId].mpesa_collected += m;
+            } else {
+                if (isCashPayment(r.payment_method)) cashierMap[uId].cash_collected += r.total_charged;
+                else if (isMpesaPayment(r.payment_method)) cashierMap[uId].mpesa_collected += r.total_charged;
+                else cashierMap[uId].cash_collected += r.total_charged;
+            }
+        }
     });
 
-    let rTotal = 0;
-    let resAgg = {};
-    // Always include in PDF report for accurate monthly/daily profit
-    currentResources.forEach(r => {
-        const name = r.name || 'Resource';
-        resAgg[name] = (resAgg[name] || 0) + (r.cost || 0);
-        rTotal += (r.cost || 0);
-        pdfTotalExpenses += (r.cost || 0);
+    cashiersPerformanceList = Object.values(cashierMap).sort((a, b) => b.total_revenue - a.total_revenue);
+}
+
+// --------------------------------------------------------------------
+// UI Renderers: KPI Scorecards
+// --------------------------------------------------------------------
+function renderKPIScorecards() {
+    let grossRevenue = 0;
+    let grossProfit = 0;
+    let cashInTill = 0;
+    let mpesaVerified = 0;
+    let debtIssued = 0;
+    let debtCollected = 0;
+    let totalUnitsSold = 0;
+
+    receiptGroupsList.forEach(r => {
+        if (r.status === 'debt' || (r.payment_method && r.payment_method.toLowerCase().includes('debt'))) {
+            debtIssued += r.total_charged;
+            grossRevenue += r.total_charged;
+            grossProfit += r.calculated_profit;
+        } else if (r.status === 'debt_collection') {
+            debtCollected += r.total_charged;
+            if (isCashPayment(r.payment_method)) cashInTill += r.total_charged;
+            else if (isMpesaPayment(r.payment_method)) mpesaVerified += r.total_charged;
+            else cashInTill += r.total_charged;
+        } else {
+            grossRevenue += r.total_charged;
+            grossProfit += r.calculated_profit;
+
+            const splitMatch = (r.notes || '').match(/Cash:\s*([\d.]+)\s*\|\s*M-Pesa:\s*([\d.]+)/i);
+            if (splitMatch) {
+                const c = parseFloat(splitMatch[1]) || 0;
+                const m = parseFloat(splitMatch[2]) || 0;
+                cashInTill += c;
+                mpesaVerified += m;
+            } else {
+                if (isCashPayment(r.payment_method)) cashInTill += r.total_charged;
+                else if (isMpesaPayment(r.payment_method)) mpesaVerified += r.total_charged;
+                else cashInTill += r.total_charged;
+            }
+        }
     });
 
-    let fTotal = 0;
-    let fixedList = [];
-    currentOverheads.forEach(o => {
-        if (o.rent) { fixedList.push(`Rent: Ksh ${o.rent.toLocaleString()}`); fTotal += o.rent; pdfTotalExpenses += o.rent; }
-        if (o.electricity) { fixedList.push(`Elec: Ksh ${o.electricity.toLocaleString()}`); fTotal += o.electricity; pdfTotalExpenses += o.electricity; }
-        if (o.wifi_internet) { fixedList.push(`WiFi: Ksh ${o.wifi_internet.toLocaleString()}`); fTotal += o.wifi_internet; pdfTotalExpenses += o.wifi_internet; }
-        if (o.other_fixed) { fixedList.push(`Other Fixed: Ksh ${o.other_fixed.toLocaleString()}`); fTotal += o.other_fixed; pdfTotalExpenses += o.other_fixed; }
+    groupedProductsMatrix.forEach(p => {
+        totalUnitsSold += p.units_sold;
     });
 
-    doc.setTextColor(50, 50, 50);
-    doc.setFontSize(14);
-    doc.setFont("helvetica", "bold");
-    doc.text("Executive Summary", 14, 45);
-    
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "normal");
-    
-    // Left column
-    doc.text(`Gross Revenue: Ksh ${rev.toLocaleString()}`, 14, 55);
-    doc.text(`Gross Profit: Ksh ${grossProf.toLocaleString()}`, 14, 62);
-    doc.text(`Debt Issued: Ksh ${pdfDebtIssued.toLocaleString()}`, 14, 69);
-    doc.text(`Debt Collected: Ksh ${pdfDebtCollected.toLocaleString()}`, 14, 76);
-    
-    // Middle column
-    const userSummary = Object.entries(userTotals).map(u => `${u[0]}: Ksh ${u[1].toLocaleString()}`).join('  |  ');
-    doc.text(`Cashiers: ${userSummary}`, 85, 55);
-    doc.text(`Cash: Ksh ${methodTotals.cash.toLocaleString()}`, 85, 62);
-    doc.text(`M-Pesa: Ksh ${methodTotals.mpesa.toLocaleString()}`, 85, 69);
-    
-    const tableData = Object.entries(itemAgg).sort((a,b) => b[1].revenue - a[1].revenue).map(entry => [
-        entry[0],
-        entry[1].qty,
-        `Ksh ${entry[1].revenue.toLocaleString()}`,
-        Array.from(entry[1].method).join('/'),
-        Array.from(entry[1].users).join(', ')
-    ]);
-    
-    doc.autoTable({
-        startY: 80,
-        head: [['Item / Service', 'Total Qty', 'Total Revenue', 'Payment Modes', 'Cashiers']],
-        body: tableData,
-        theme: 'striped',
-        headStyles: { fillColor: [234, 88, 12] },
-        alternateRowStyles: { fillColor: [248, 250, 252] },
-        styles: { font: 'helvetica', fontSize: 9 },
-        margin: { top: 35 }
+    const marginPct = grossRevenue > 0 ? ((grossProfit / grossRevenue) * 100).toFixed(1) : '0.0';
+    const totalTransactions = receiptGroupsList.length;
+    const aov = totalTransactions > 0 ? (grossRevenue / totalTransactions) : 0;
+
+    // Inject into KPI Cards
+    document.getElementById('kpi-rev').textContent = `KSh ${grossRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    document.getElementById('kpi-profit').textContent = `KSh ${grossProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    document.getElementById('kpi-margin-pct').textContent = `Gross Margin: ${marginPct}%`;
+    document.getElementById('kpi-cash').textContent = `KSh ${cashInTill.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    document.getElementById('kpi-mpesa').textContent = `KSh ${mpesaVerified.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    document.getElementById('kpi-debt-issued').textContent = `KSh ${debtIssued.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    document.getElementById('kpi-debt-count').textContent = `${debtIssuedReceipts.length} credit order${debtIssuedReceipts.length === 1 ? '' : 's'}`;
+    document.getElementById('kpi-debt-collected').textContent = `KSh ${debtCollected.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+    // Secondary Summary Strip
+    document.getElementById('kpi-tx-count').textContent = totalTransactions.toLocaleString();
+    document.getElementById('kpi-units-count').textContent = `${totalUnitsSold.toLocaleString()} units`;
+    document.getElementById('kpi-aov').textContent = `KSh ${aov.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    document.getElementById('kpi-low-stock-count').textContent = `${lowStockList.length} items`;
+
+    // Tab Badges
+    document.getElementById('badge-products-count').textContent = groupedProductsMatrix.length;
+    document.getElementById('badge-debt-count').textContent = debtIssuedReceipts.length;
+    document.getElementById('badge-repayments-count').textContent = debtCollectionReceipts.length;
+    document.getElementById('badge-cashiers-count').textContent = cashiersPerformanceList.length;
+    document.getElementById('badge-lowstock-count').textContent = lowStockList.length;
+
+    // Header pills on tabs
+    const debtIssuedPill = document.getElementById('debt-issued-summary-pill');
+    if (debtIssuedPill) debtIssuedPill.textContent = `Total Credit: KSh ${debtIssued.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+    const debtCollectedPill = document.getElementById('debt-collected-summary-pill');
+    if (debtCollectedPill) debtCollectedPill.textContent = `Total Recovered: KSh ${debtCollected.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+// --------------------------------------------------------------------
+// UI Renderers: Charts
+// --------------------------------------------------------------------
+function renderCharts() {
+    if (typeof Chart === 'undefined') {
+        console.warn('[Analytics] Chart.js library is not available');
+        return;
+    }
+
+    // 1. Payment Methods Doughnut Chart
+    let cashTotal = 0;
+    let mpesaTotal = 0;
+    let debtTotal = 0;
+
+    receiptGroupsList.forEach(r => {
+        if (r.status === 'debt' || (r.payment_method && r.payment_method.toLowerCase().includes('debt'))) {
+            debtTotal += r.total_charged;
+        } else if (r.status === 'debt_collection') {
+            if (isCashPayment(r.payment_method)) cashTotal += r.total_charged;
+            else if (isMpesaPayment(r.payment_method)) mpesaTotal += r.total_charged;
+            else cashTotal += r.total_charged;
+        } else {
+            const splitMatch = (r.notes || '').match(/Cash:\s*([\d.]+)\s*\|\s*M-Pesa:\s*([\d.]+)/i);
+            if (splitMatch) {
+                cashTotal += parseFloat(splitMatch[1]) || 0;
+                mpesaTotal += parseFloat(splitMatch[2]) || 0;
+            } else {
+                if (isCashPayment(r.payment_method)) cashTotal += r.total_charged;
+                else if (isMpesaPayment(r.payment_method)) mpesaTotal += r.total_charged;
+                else cashTotal += r.total_charged;
+            }
+        }
     });
 
-    let currentY = doc.lastAutoTable.finalY + 15;
-    
-    // The "Hard Truth" Math & Expenses Section
-    doc.setFontSize(14);
-    doc.setFont("helvetica", "bold");
-    doc.text("Net Profit & Expense Breakdown", 14, currentY);
-    currentY += 8;
-
-    doc.setFontSize(11);
-    doc.setFont("helvetica", "normal");
-    doc.text(`Gross Profit: Ksh ${grossProf.toLocaleString()}`, 14, currentY);
-    currentY += 6;
-    if (wTotal > 0) { doc.text(`- Wages: Ksh ${wTotal.toLocaleString()}`, 14, currentY); currentY += 6; }
-    if (fTotal > 0) { doc.text(`- Fixed Bills: Ksh ${fTotal.toLocaleString()}`, 14, currentY); currentY += 6; }
-    if (rTotal > 0) { doc.text(`- Opened Resources: Ksh ${rTotal.toLocaleString()}`, 14, currentY); currentY += 6; }
-    if (dTotal > 0) { doc.text(`- Other Expenses: Ksh ${dTotal.toLocaleString()}`, 14, currentY); currentY += 6; }
-    
-    currentY += 2;
-    doc.setFont("helvetica", "bold");
-    doc.text(`NET PROFIT: Ksh ${(grossProf - pdfTotalExpenses).toLocaleString()}`, 14, currentY);
-    currentY += 10;
-    
-    if (Object.keys(expAgg).length > 0 || Object.keys(resAgg).length > 0 || fixedList.length > 0) {
-        doc.setFontSize(10);
-        doc.text("Detailed Deductions:", 14, currentY);
-        currentY += 6;
-        doc.setFontSize(9);
-        doc.setFont("helvetica", "normal");
-        
-        Object.entries(expAgg).forEach(([desc, amt]) => {
-            doc.text(`- ${desc}: Ksh ${amt.toLocaleString()}`, 14, currentY);
-            currentY += 5;
-        });
-        Object.entries(resAgg).forEach(([name, cost]) => {
-            doc.text(`- [Opened] ${name}: Ksh ${cost.toLocaleString()}`, 14, currentY);
-            currentY += 5;
-        });
-        fixedList.forEach(item => {
-            doc.text(`- [Fixed] ${item}`, 14, currentY);
-            currentY += 5;
+    const paymentCanvas = document.getElementById('paymentChart');
+    if (paymentCanvas) {
+        if (chartPaymentInstance) chartPaymentInstance.destroy();
+        chartPaymentInstance = new Chart(paymentCanvas, {
+            type: 'doughnut',
+            data: {
+                labels: ['Cash', 'M-Pesa', 'Store Credit'],
+                datasets: [{
+                    data: [cashTotal, mpesaTotal, debtTotal],
+                    backgroundColor: ['#10b981', '#0284c7', '#ea580c'],
+                    hoverBackgroundColor: ['#059669', '#0369a1', '#c2410c'],
+                    borderWidth: 2,
+                    borderColor: '#ffffff'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'bottom', labels: { font: { size: 11, weight: 'bold' } } },
+                    tooltip: {
+                        callbacks: {
+                            label: function (ctx) {
+                                const val = ctx.raw || 0;
+                                return ` ${ctx.label}: KSh ${val.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+                            }
+                        }
+                    }
+                },
+                cutout: '65%'
+            }
         });
     }
-    
-    const finalY = currentY > (doc.lastAutoTable.finalY + 15) ? currentY : (doc.lastAutoTable.finalY || 80);
-    doc.setFontSize(8);
-    doc.setTextColor(150, 150, 150);
-    doc.text(`Generated by Litaj Hardware System on ${new Date().toLocaleString()}`, 14, finalY + 15);
-    
-    const filename = periodStr === 'today' ? `Daily_Report_${new Date().toISOString().split('T')[0]}.pdf` : `Report_${new Date().toISOString().split('T')[0]}.pdf`;
-    doc.save(filename);
-});
 
-load();
+    // 2. Top Selling Products Bar Chart (Top 5)
+    const top5Products = groupedProductsMatrix.slice(0, 5);
+    const itemsCanvas = document.getElementById('itemsChart');
+    if (itemsCanvas) {
+        if (chartItemsInstance) chartItemsInstance.destroy();
+        chartItemsInstance = new Chart(itemsCanvas, {
+            type: 'bar',
+            data: {
+                labels: top5Products.map(p => p.name.length > 15 ? p.name.slice(0, 15) + '…' : p.name),
+                datasets: [{
+                    label: 'Revenue (KSh)',
+                    data: top5Products.map(p => p.total_revenue),
+                    backgroundColor: '#ea580c',
+                    borderRadius: 6
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                indexAxis: 'y',
+                scales: {
+                    x: { ticks: { font: { size: 10 } }, grid: { display: false } },
+                    y: { ticks: { font: { size: 10, weight: 'bold' } }, grid: { display: false } }
+                },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: function (ctx) {
+                                return ` Revenue: KSh ${ctx.raw.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // 3. Cashier Performance Bar Chart
+    const cashiersCanvas = document.getElementById('cashierChart');
+    if (cashiersCanvas) {
+        if (chartCashiersInstance) chartCashiersInstance.destroy();
+        chartCashiersInstance = new Chart(cashiersCanvas, {
+            type: 'bar',
+            data: {
+                labels: cashiersPerformanceList.map(c => c.username),
+                datasets: [
+                    {
+                        label: 'Cash',
+                        data: cashiersPerformanceList.map(c => c.cash_collected),
+                        backgroundColor: '#10b981',
+                        borderRadius: 4
+                    },
+                    {
+                        label: 'M-Pesa',
+                        data: cashiersPerformanceList.map(c => c.mpesa_collected),
+                        backgroundColor: '#0284c7',
+                        borderRadius: 4
+                    },
+                    {
+                        label: 'Credit',
+                        data: cashiersPerformanceList.map(c => c.debt_issued),
+                        backgroundColor: '#ea580c',
+                        borderRadius: 4
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: { stacked: true, ticks: { font: { size: 10, weight: 'bold' } }, grid: { display: false } },
+                    y: { stacked: true, ticks: { font: { size: 10 } }, grid: { color: '#f1f5f9' } }
+                },
+                plugins: {
+                    legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 10, weight: 'bold' } } },
+                    tooltip: {
+                        callbacks: {
+                            label: function (ctx) {
+                                return ` ${ctx.dataset.label}: KSh ${ctx.raw.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+}
+
+// --------------------------------------------------------------------
+// UI Renderers: Products Sold Matrix
+// --------------------------------------------------------------------
+function renderProductsMatrix() {
+    const tbody = document.getElementById('tbody-products-sold');
+    const tfoot = document.getElementById('tfoot-products-sold');
+    if (!tbody) return;
+
+    let filtered = groupedProductsMatrix;
+    if (productsSearchTerm) {
+        filtered = filtered.filter(p => 
+            p.name.toLowerCase().includes(productsSearchTerm) || 
+            p.category.toLowerCase().includes(productsSearchTerm)
+        );
+    }
+
+    if (filtered.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="9" class="py-8 text-center text-slate-400 font-semibold">No hardware products sold in this period.</td></tr>`;
+        if (tfoot) tfoot.innerHTML = '';
+        return;
+    }
+
+    let sumUnits = 0;
+    let sumRev = 0;
+    let sumCogs = 0;
+    let sumProfit = 0;
+
+    tbody.innerHTML = filtered.map(p => {
+        sumUnits += p.units_sold;
+        sumRev += p.total_revenue;
+        sumCogs += p.total_cogs;
+        sumProfit += p.total_profit;
+
+        const margin = p.total_revenue > 0 ? ((p.total_profit / p.total_revenue) * 100).toFixed(1) : '0.0';
+        const marginColor = parseFloat(margin) >= 20 ? 'text-emerald-700 bg-emerald-50' : parseFloat(margin) >= 10 ? 'text-blue-700 bg-blue-50' : 'text-slate-700 bg-slate-100';
+
+        return `
+            <tr class="hover:bg-slate-50 transition border-b border-slate-100">
+                <td class="py-3 px-3">
+                    <span class="font-black text-slate-900 block">${escapeHtml(p.name)}</span>
+                    <span class="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Unit: ${escapeHtml(p.unit)}</span>
+                </td>
+                <td class="py-3 px-3">
+                    <span class="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                        ${escapeHtml(p.category)}
+                    </span>
+                </td>
+                <td class="py-3 px-3 text-center font-black text-slate-800">
+                    ${p.units_sold.toLocaleString()}
+                </td>
+                <td class="py-3 px-3 text-right font-medium text-slate-600">
+                    KSh ${p.unit_selling_price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </td>
+                <td class="py-3 px-3 text-right font-medium text-slate-500">
+                    KSh ${p.unit_buying_price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </td>
+                <td class="py-3 px-3 text-right font-black text-slate-900">
+                    KSh ${p.total_revenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </td>
+                <td class="py-3 px-3 text-right font-medium text-slate-500">
+                    KSh ${p.total_cogs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </td>
+                <td class="py-3 px-3 text-right font-black text-emerald-600">
+                    KSh ${p.total_profit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </td>
+                <td class="py-3 px-3 text-center">
+                    <span class="px-2 py-0.5 rounded-md text-xs font-black ${marginColor}">
+                        ${margin}%
+                    </span>
+                </td>
+            </tr>
+        `;
+    }).join('');
+
+    const overallMargin = sumRev > 0 ? ((sumProfit / sumRev) * 100).toFixed(1) : '0.0';
+
+    if (tfoot) {
+        tfoot.innerHTML = `
+            <tr>
+                <td class="py-3 px-3 font-black text-slate-900 uppercase">Total Consolidated (${filtered.length} Items)</td>
+                <td class="py-3 px-3"></td>
+                <td class="py-3 px-3 text-center font-black text-slate-900">${sumUnits.toLocaleString()}</td>
+                <td class="py-3 px-3"></td>
+                <td class="py-3 px-3"></td>
+                <td class="py-3 px-3 text-right font-black text-slate-900">KSh ${sumRev.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                <td class="py-3 px-3 text-right font-black text-slate-600">KSh ${sumCogs.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                <td class="py-3 px-3 text-right font-black text-emerald-600">KSh ${sumProfit.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                <td class="py-3 px-3 text-center font-black text-emerald-700 bg-emerald-50">${overallMargin}%</td>
+            </tr>
+        `;
+    }
+}
+
+// --------------------------------------------------------------------
+// UI Renderers: Debt Audit Ledger (Who took debt & What was it)
+// --------------------------------------------------------------------
+function renderDebtAuditLedger() {
+    const tbody = document.getElementById('tbody-debt-audit');
+    const tfoot = document.getElementById('tfoot-debt-audit');
+    if (!tbody) return;
+
+    if (debtIssuedReceipts.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" class="py-8 text-center text-slate-400 font-semibold">No store credit or debt orders issued during this period.</td></tr>`;
+        if (tfoot) tfoot.innerHTML = '';
+        return;
+    }
+
+    let totalDebtIssued = 0;
+
+    tbody.innerHTML = debtIssuedReceipts.map(r => {
+        totalDebtIssued += r.total_charged;
+        const dateStr = formatDateTime(r.timestamp);
+        const debtorName = r.customer?.name || 'Walk-in / Unlinked Customer';
+        const debtorPhone = r.customer?.phone ? `<a href="tel:${r.customer.phone}" class="text-[11px] text-orange-600 font-bold hover:underline block">${r.customer.phone}</a>` : '';
+
+        // Format itemized products on debt
+        const itemsHtml = r.items.map(item => {
+            const name = item.inventory?.name || item.notes || 'Hardware Item';
+            const qty = item.calculated_qty || 1;
+            const unit = item.inventory?.unit_of_measure || 'pcs';
+            const price = (item.total_charged / (qty || 1));
+            const total = item.total_charged;
+            return `
+                <div class="flex items-center justify-between text-xs py-0.5 border-b border-slate-100 last:border-b-0">
+                    <span class="font-bold text-slate-800">
+                        • ${escapeHtml(name)} <span class="text-slate-500 font-normal">(${qty} ${unit} @ KSh ${price.toLocaleString(undefined, { minimumFractionDigits: 2 })})</span>
+                    </span>
+                    <span class="font-black text-slate-700 ml-2">KSh ${total.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                </div>
+            `;
+        }).join('');
+
+        return `
+            <tr class="hover:bg-orange-50/30 transition border-b border-slate-100">
+                <td class="py-3 px-3 text-slate-600 font-medium whitespace-nowrap">
+                    ${dateStr}
+                </td>
+                <td class="py-3 px-3 font-mono font-black text-xs text-orange-600">
+                    ${escapeHtml(r.receipt_no)}
+                </td>
+                <td class="py-3 px-3">
+                    <span class="font-black text-slate-900 block">${escapeHtml(debtorName)}</span>
+                    ${debtorPhone}
+                </td>
+                <td class="py-3 px-3 bg-slate-50/60 rounded-xl my-1 p-2 border border-slate-200/60">
+                    ${itemsHtml}
+                </td>
+                <td class="py-3 px-3 text-center">
+                    <span class="px-2 py-0.5 rounded text-[11px] font-bold bg-slate-100 text-slate-700">
+                        ${escapeHtml(r.cashier_username)}
+                    </span>
+                </td>
+                <td class="py-3 px-3 text-right font-black text-orange-600 text-sm whitespace-nowrap">
+                    KSh ${r.total_charged.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </td>
+            </tr>
+        `;
+    }).join('');
+
+    if (tfoot) {
+        tfoot.innerHTML = `
+            <tr>
+                <td colspan="5" class="py-3 px-3 font-black text-slate-900 uppercase">
+                    Total Store Credit Issued (${debtIssuedReceipts.length} Transactions)
+                </td>
+                <td class="py-3 px-3 text-right font-black text-orange-600 text-base">
+                    KSh ${totalDebtIssued.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </td>
+            </tr>
+        `;
+    }
+}
+
+// --------------------------------------------------------------------
+// UI Renderers: Debt Repayments Collected
+// --------------------------------------------------------------------
+function renderDebtRepaymentsLedger() {
+    const tbody = document.getElementById('tbody-repayments');
+    const tfoot = document.getElementById('tfoot-repayments');
+    if (!tbody) return;
+
+    if (debtCollectionReceipts.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-slate-400 font-semibold">No debt repayments received in this period.</td></tr>`;
+        if (tfoot) tfoot.innerHTML = '';
+        return;
+    }
+
+    let totalRecovered = 0;
+
+    tbody.innerHTML = debtCollectionReceipts.map(r => {
+        totalRecovered += r.total_charged;
+        const dateStr = formatDateTime(r.timestamp);
+        const customerName = r.customer?.name || 'Customer Account';
+        const customerPhone = r.customer?.phone || '';
+        const method = r.payment_method || 'Cash';
+        const methodBadge = method.toLowerCase().includes('cash')
+            ? '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">💵 Cash</span>'
+            : '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-sky-100 text-sky-800">📱 M-Pesa</span>';
+
+        return `
+            <tr class="hover:bg-slate-50 transition border-b border-slate-100">
+                <td class="py-3 px-3 text-slate-600 font-medium whitespace-nowrap">
+                    ${dateStr}
+                </td>
+                <td class="py-3 px-3 font-mono font-black text-xs text-slate-700">
+                    ${escapeHtml(r.receipt_no)}
+                </td>
+                <td class="py-3 px-3">
+                    <span class="font-black text-slate-900 block">${escapeHtml(customerName)}</span>
+                    <span class="text-[10px] text-slate-500">${escapeHtml(customerPhone)}</span>
+                </td>
+                <td class="py-3 px-3 text-center">
+                    ${methodBadge}
+                </td>
+                <td class="py-3 px-3 text-slate-600 font-medium text-xs">
+                    ${escapeHtml(r.notes || 'Customer debt pay-down')}
+                </td>
+                <td class="py-3 px-3 text-center">
+                    <span class="px-2 py-0.5 rounded text-[11px] font-bold bg-slate-100 text-slate-700">
+                        ${escapeHtml(r.cashier_username)}
+                    </span>
+                </td>
+                <td class="py-3 px-3 text-right font-black text-teal-600 text-sm whitespace-nowrap">
+                    KSh ${r.total_charged.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </td>
+            </tr>
+        `;
+    }).join('');
+
+    if (tfoot) {
+        tfoot.innerHTML = `
+            <tr>
+                <td colspan="6" class="py-3 px-3 font-black text-slate-900 uppercase">
+                    Total Debt Collections Received (${debtCollectionReceipts.length} Payments)
+                </td>
+                <td class="py-3 px-3 text-right font-black text-teal-600 text-base">
+                    KSh ${totalRecovered.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </td>
+            </tr>
+        `;
+    }
+}
+
+// --------------------------------------------------------------------
+// UI Renderers: Cashier Performance Roster
+// --------------------------------------------------------------------
+function renderCashierRoster() {
+    const tbody = document.getElementById('tbody-cashiers');
+    const tfoot = document.getElementById('tfoot-cashiers');
+    if (!tbody) return;
+
+    if (cashiersPerformanceList.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-slate-400 font-semibold">No cashier sales recorded during this period.</td></tr>`;
+        if (tfoot) tfoot.innerHTML = '';
+        return;
+    }
+
+    let grandCash = 0;
+    let grandMpesa = 0;
+    let grandDebt = 0;
+    let grandRev = 0;
+    let grandTx = 0;
+
+    cashiersPerformanceList.forEach(c => {
+        grandCash += c.cash_collected;
+        grandMpesa += c.mpesa_collected;
+        grandDebt += c.debt_issued;
+        grandRev += c.total_revenue;
+        grandTx += c.tx_count;
+    });
+
+    tbody.innerHTML = cashiersPerformanceList.map(c => {
+        const share = grandRev > 0 ? ((c.total_revenue / grandRev) * 100).toFixed(1) : '0.0';
+
+        return `
+            <tr class="hover:bg-slate-50 transition border-b border-slate-100">
+                <td class="py-3 px-3">
+                    <span class="font-black text-slate-900 block">${escapeHtml(c.name)}</span>
+                    <span class="text-[10px] text-slate-400 font-bold uppercase">@${escapeHtml(c.username)}</span>
+                </td>
+                <td class="py-3 px-3 text-center font-black text-slate-800">
+                    ${c.tx_count.toLocaleString()}
+                </td>
+                <td class="py-3 px-3 text-right font-medium text-emerald-700">
+                    KSh ${c.cash_collected.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </td>
+                <td class="py-3 px-3 text-right font-medium text-sky-700">
+                    KSh ${c.mpesa_collected.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </td>
+                <td class="py-3 px-3 text-right font-medium text-orange-600">
+                    KSh ${c.debt_issued.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </td>
+                <td class="py-3 px-3 text-right font-black text-slate-900 text-sm">
+                    KSh ${c.total_revenue.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </td>
+                <td class="py-3 px-3 text-center">
+                    <span class="px-2 py-0.5 rounded font-black text-xs bg-slate-100 text-slate-800">
+                        ${share}%
+                    </span>
+                </td>
+            </tr>
+        `;
+    }).join('');
+
+    if (tfoot) {
+        tfoot.innerHTML = `
+            <tr>
+                <td class="py-3 px-3 font-black text-slate-900 uppercase">Total Cashier Shift Balancing</td>
+                <td class="py-3 px-3 text-center font-black text-slate-900">${grandTx.toLocaleString()}</td>
+                <td class="py-3 px-3 text-right font-black text-emerald-700">KSh ${grandCash.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                <td class="py-3 px-3 text-right font-black text-sky-700">KSh ${grandMpesa.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                <td class="py-3 px-3 text-right font-black text-orange-600">KSh ${grandDebt.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                <td class="py-3 px-3 text-right font-black text-slate-900">KSh ${grandRev.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                <td class="py-3 px-3 text-center font-black text-slate-900">100.0%</td>
+            </tr>
+        `;
+    }
+}
+
+// --------------------------------------------------------------------
+// UI Renderers: Low Stock Watchlist
+// --------------------------------------------------------------------
+function renderLowStockWatchlist() {
+    const tbody = document.getElementById('tbody-lowstock');
+    if (!tbody) return;
+
+    if (lowStockList.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-emerald-600 font-bold">All inventory stock levels are well above the replenishment threshold (all &gt; 5 units).</td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = lowStockList.map(item => {
+        const margin = (item.selling_price - item.buying_price);
+        const marginPct = item.selling_price > 0 ? ((margin / item.selling_price) * 100).toFixed(1) : '0.0';
+
+        return `
+            <tr class="hover:bg-red-50/30 transition border-b border-slate-100">
+                <td class="py-3 px-3 font-black text-slate-900">
+                    ${escapeHtml(item.name)}
+                </td>
+                <td class="py-3 px-3">
+                    <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                        ${escapeHtml(item.category || 'General')}
+                    </span>
+                </td>
+                <td class="py-3 px-3 text-center">
+                    <span class="px-2.5 py-1 rounded-full text-xs font-black bg-red-100 text-red-700 border border-red-200">
+                        ${item.stock_quantity} ${item.unit_of_measure || 'units'}
+                    </span>
+                </td>
+                <td class="py-3 px-3 text-right font-medium text-slate-600">
+                    KSh ${parseFloat(item.buying_price || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </td>
+                <td class="py-3 px-3 text-right font-black text-slate-900">
+                    KSh ${parseFloat(item.selling_price || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </td>
+                <td class="py-3 px-3 text-center font-bold text-emerald-600 text-xs">
+                    +KSh ${margin.toFixed(2)} (${marginPct}%)
+                </td>
+                <td class="py-3 px-3 text-center">
+                    <a href="/restock.html" class="px-2.5 py-1 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-xs font-bold transition">
+                        Order
+                    </a>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+// --------------------------------------------------------------------
+// Upgraded Executive Financial Audit PDF Generator
+// --------------------------------------------------------------------
+function generateAnalyticsAuditPDF() {
+    if (!window.jspdf) {
+        return alert('PDF generation library is still loading. Please try again.');
+    }
+
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4'
+    });
+
+    const { label: periodLabel } = computeDateFilterBounds();
+    const storeName = (storeSettings.company_name || 'LITAJ HARDWARE').toUpperCase();
+    const phone = storeSettings.phone_contact || '+254 700 000 000';
+    const address = storeSettings.location_address || 'Main Hardware Yard, Commercial Street';
+    const printedAt = new Date().toLocaleString();
+    const auditorName = currentUser?.full_name || currentUser?.username || 'System Auditor';
+
+    // 1. Header Banner (Slate-900 / Orange Accent)
+    doc.setFillColor(15, 23, 42); // slate-900
+    doc.rect(0, 0, 210, 32, 'F');
+
+    doc.setFillColor(234, 88, 12); // orange-600 accent bar
+    doc.rect(0, 31, 210, 1.5, 'F');
+
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(16);
+    doc.text(storeName, 14, 13);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(203, 213, 225); // slate-300
+    doc.text(`BUILDING MATERIALS & CONSTRUCTION SUPPLIES • AUDIT & FINANCIAL REPORT`, 14, 19);
+    doc.text(`Tel: ${phone} | Location: ${address}`, 14, 25);
+
+    // Right-aligned report details
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(255, 255, 255);
+    doc.text('EXECUTIVE SALES AUDIT', 196, 13, { align: 'right' });
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(226, 232, 240);
+    doc.text(`Period: ${periodLabel}`, 196, 18, { align: 'right' });
+    doc.text(`Audited By: ${auditorName}`, 196, 23, { align: 'right' });
+    doc.text(`Printed: ${printedAt}`, 196, 28, { align: 'right' });
+
+    // 2. Executive Financial Scorecard (AutoTable)
+    let grossRev = 0;
+    let grossProf = 0;
+    let cashInTill = 0;
+    let mpesaVerified = 0;
+    let debtIssued = 0;
+    let debtCollected = 0;
+    let sumCOGS = 0;
+
+    receiptGroupsList.forEach(r => {
+        if (r.status === 'debt' || (r.payment_method && r.payment_method.toLowerCase().includes('debt'))) {
+            debtIssued += r.total_charged;
+            grossRev += r.total_charged;
+            grossProf += r.calculated_profit;
+        } else if (r.status === 'debt_collection') {
+            debtCollected += r.total_charged;
+            if (isCashPayment(r.payment_method)) cashInTill += r.total_charged;
+            else if (isMpesaPayment(r.payment_method)) mpesaVerified += r.total_charged;
+            else cashInTill += r.total_charged;
+        } else {
+            grossRev += r.total_charged;
+            grossProf += r.calculated_profit;
+
+            const splitMatch = (r.notes || '').match(/Cash:\s*([\d.]+)\s*\|\s*M-Pesa:\s*([\d.]+)/i);
+            if (splitMatch) {
+                cashInTill += parseFloat(splitMatch[1]) || 0;
+                mpesaVerified += parseFloat(splitMatch[2]) || 0;
+            } else {
+                if (isCashPayment(r.payment_method)) cashInTill += r.total_charged;
+                else if (isMpesaPayment(r.payment_method)) mpesaVerified += r.total_charged;
+                else cashInTill += r.total_charged;
+            }
+        }
+    });
+
+    sumCOGS = grossRev - grossProf;
+    const marginPct = grossRev > 0 ? ((grossProf / grossRev) * 100).toFixed(1) : '0.0';
+
+    doc.autoTable({
+        startY: 38,
+        head: [['GROSS SALES REVENUE', 'COST OF GOODS (COGS)', 'GROSS STORE PROFIT', 'PROFIT MARGIN %']],
+        body: [[
+            `KSh ${grossRev.toLocaleString(undefined, { minimumFractionDigits: 2 })}`,
+            `KSh ${sumCOGS.toLocaleString(undefined, { minimumFractionDigits: 2 })}`,
+            `KSh ${grossProf.toLocaleString(undefined, { minimumFractionDigits: 2 })}`,
+            `${marginPct}%`
+        ]],
+        theme: 'grid',
+        headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8.5, halign: 'center' },
+        bodyStyles: { fontStyle: 'bold', fontSize: 9.5, halign: 'center', textColor: [15, 23, 42], cellPadding: 2.5 },
+        margin: { left: 14, right: 14 }
+    });
+
+    let currentY = doc.lastAutoTable.finalY + 3;
+
+    doc.autoTable({
+        startY: currentY,
+        head: [['CASH IN DRAWER', 'M-PESA VERIFIED', 'STORE DEBT ISSUED', 'DEBT REPAID (RECOVERED)']],
+        body: [[
+            `KSh ${cashInTill.toLocaleString(undefined, { minimumFractionDigits: 2 })}`,
+            `KSh ${mpesaVerified.toLocaleString(undefined, { minimumFractionDigits: 2 })}`,
+            `KSh ${debtIssued.toLocaleString(undefined, { minimumFractionDigits: 2 })}`,
+            `KSh ${debtCollected.toLocaleString(undefined, { minimumFractionDigits: 2 })}`
+        ]],
+        theme: 'grid',
+        headStyles: { fillColor: [71, 85, 105], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8.5, halign: 'center' },
+        bodyStyles: { fontStyle: 'bold', fontSize: 9.5, halign: 'center', textColor: [15, 23, 42], cellPadding: 2.5 },
+        margin: { left: 14, right: 14 }
+    });
+
+    // 3. Section Title: Products Sold Breakdown
+    currentY = doc.lastAutoTable.finalY + 8;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor(15, 23, 42);
+    doc.text('1. CONSOLIDATED PRODUCTS SOLD MATRIX', 14, currentY);
+
+    const productsTableData = groupedProductsMatrix.map(p => {
+        const margin = p.total_revenue > 0 ? ((p.total_profit / p.total_revenue) * 100).toFixed(1) : '0.0';
+        return [
+            p.name,
+            p.category,
+            `${p.units_sold} ${p.unit}`,
+            p.unit_selling_price.toLocaleString(undefined, { minimumFractionDigits: 2 }),
+            p.total_cogs.toLocaleString(undefined, { minimumFractionDigits: 2 }),
+            p.total_revenue.toLocaleString(undefined, { minimumFractionDigits: 2 }),
+            p.total_profit.toLocaleString(undefined, { minimumFractionDigits: 2 }),
+            `${margin}%`
+        ];
+    });
+
+    let totalSoldUnits = 0;
+    groupedProductsMatrix.forEach(p => totalSoldUnits += p.units_sold);
+
+    const productsFootData = [[
+        `Consolidated Total (${groupedProductsMatrix.length} Items)`,
+        '',
+        `${totalSoldUnits} units`,
+        '',
+        sumCOGS.toLocaleString(undefined, { minimumFractionDigits: 2 }),
+        grossRev.toLocaleString(undefined, { minimumFractionDigits: 2 }),
+        grossProf.toLocaleString(undefined, { minimumFractionDigits: 2 }),
+        `${marginPct}%`
+    ]];
+
+    doc.autoTable({
+        startY: currentY + 3,
+        head: [['Hardware Item', 'Category', 'Qty Sold', 'Unit Price', 'COGS (Cost)', 'Total Revenue', 'Gross Profit', 'Margin']],
+        body: productsTableData.length > 0 ? productsTableData : [['No hardware sales recorded during this period.', '', '', '', '', '', '', '']],
+        foot: productsTableData.length > 0 ? productsFootData : [],
+        theme: 'striped',
+        headStyles: { fillColor: [234, 88, 12], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 7.5 },
+        footStyles: { fillColor: [241, 245, 249], textColor: [15, 23, 42], fontStyle: 'bold', fontSize: 8 },
+        styles: { fontSize: 7.5, cellPadding: 2 },
+        columnStyles: {
+            0: { cellWidth: 50 },
+            1: { cellWidth: 32 },
+            2: { cellWidth: 18, halign: 'center' },
+            3: { cellWidth: 20, halign: 'right' },
+            4: { cellWidth: 20, halign: 'right' },
+            5: { cellWidth: 22, halign: 'right' },
+            6: { cellWidth: 20, halign: 'right' },
+            7: { cellWidth: 16, halign: 'center' }
+        },
+        margin: { left: 14, right: 14 }
+    });
+
+    // 4. Section Title: Store Debt Given Out - Detailed Itemized Audit Ledger (CRITICAL REQUIREMENT)
+    currentY = doc.lastAutoTable.finalY + 9;
+
+    // Check if new page is needed for debt section
+    if (currentY > 230) {
+        doc.addPage();
+        currentY = 20;
+    }
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor(234, 88, 12); // Orange
+    doc.text('2. STORE DEBT ISSUED AUDIT (WHO TOOK CREDIT & WHAT PRODUCTS)', 14, currentY);
+
+    const debtTableData = debtIssuedReceipts.map(r => {
+        const dateStr = formatDateTime(r.timestamp);
+        const debtor = `${r.customer?.name || 'Walk-in / Unlinked'}\n${r.customer?.phone || 'No phone'}`;
+
+        // Itemized list of hardware products taken on debt
+        const itemsStr = r.items.map(item => {
+            const name = item.inventory?.name || item.notes || 'Hardware Item';
+            const qty = item.calculated_qty || 1;
+            const unit = item.inventory?.unit_of_measure || 'pcs';
+            const price = (item.total_charged / (qty || 1));
+            return `• ${name} (${qty} ${unit} @ KSh ${price.toLocaleString()}) = KSh ${item.total_charged.toLocaleString()}`;
+        }).join('\n');
+
+        return [
+            dateStr,
+            r.receipt_no,
+            debtor,
+            itemsStr,
+            r.cashier_username,
+            `KSh ${r.total_charged.toLocaleString(undefined, { minimumFractionDigits: 2 })}`
+        ];
+    });
+
+    const debtFootData = [[
+        `Total Store Debt Issued (${debtIssuedReceipts.length} Transactions)`,
+        '',
+        '',
+        '',
+        '',
+        `KSh ${debtIssued.toLocaleString(undefined, { minimumFractionDigits: 2 })}`
+    ]];
+
+    doc.autoTable({
+        startY: currentY + 3,
+        head: [['Date / Time', 'Receipt #', 'Debtor (Customer)', 'Itemized Hardware Products Taken on Credit', 'Cashier', 'Debt Amount']],
+        body: debtTableData.length > 0 ? debtTableData : [['No store credit or debt issued during this period.', '', '', '', '', 'KSh 0.00']],
+        foot: debtTableData.length > 0 ? debtFootData : [],
+        theme: 'grid',
+        headStyles: { fillColor: [180, 83, 9], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 7.5 },
+        footStyles: { fillColor: [254, 243, 199], textColor: [180, 83, 9], fontStyle: 'bold', fontSize: 8 },
+        styles: { fontSize: 7.5, cellPadding: 2.2 },
+        columnStyles: {
+            0: { cellWidth: 26 },
+            1: { cellWidth: 26, fontStyle: 'bold' },
+            2: { cellWidth: 35 },
+            3: { cellWidth: 65 },
+            4: { cellWidth: 18, halign: 'center' },
+            5: { cellWidth: 28, halign: 'right', fontStyle: 'bold' }
+        },
+        margin: { left: 14, right: 14 }
+    });
+
+    // 5. Section Title: Debt Collections & Recoveries
+    currentY = doc.lastAutoTable.finalY + 9;
+    if (currentY > 230) {
+        doc.addPage();
+        currentY = 20;
+    }
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor(15, 23, 42);
+    doc.text('3. DEBT REPAYMENTS & SETTLEMENTS RECEIVED', 14, currentY);
+
+    const repaymentsTableData = debtCollectionReceipts.map(r => {
+        return [
+            formatDateTime(r.timestamp),
+            r.receipt_no,
+            `${r.customer?.name || 'Customer'}\n${r.customer?.phone || ''}`,
+            r.payment_method || 'Cash',
+            r.notes || 'Debt repayment',
+            r.cashier_username,
+            `KSh ${r.total_charged.toLocaleString(undefined, { minimumFractionDigits: 2 })}`
+        ];
+    });
+
+    const repaymentsFootData = [[
+        `Total Debt Repayments Collected (${debtCollectionReceipts.length} Payments)`,
+        '',
+        '',
+        '',
+        '',
+        '',
+        `KSh ${debtCollected.toLocaleString(undefined, { minimumFractionDigits: 2 })}`
+    ]];
+
+    doc.autoTable({
+        startY: currentY + 3,
+        head: [['Date / Time', 'Receipt #', 'Customer', 'Channel', 'Notes / Reference', 'Cashier', 'Amount Repaid']],
+        body: repaymentsTableData.length > 0 ? repaymentsTableData : [['No debt repayments recorded during this period.', '', '', '', '', '', 'KSh 0.00']],
+        foot: repaymentsTableData.length > 0 ? repaymentsFootData : [],
+        theme: 'striped',
+        headStyles: { fillColor: [13, 148, 136], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 7.5 },
+        footStyles: { fillColor: [240, 253, 250], textColor: [13, 148, 136], fontStyle: 'bold', fontSize: 8 },
+        styles: { fontSize: 7.5, cellPadding: 2 },
+        columnStyles: {
+            0: { cellWidth: 26 },
+            1: { cellWidth: 26, fontStyle: 'bold' },
+            2: { cellWidth: 35 },
+            3: { cellWidth: 20, halign: 'center' },
+            4: { cellWidth: 45 },
+            5: { cellWidth: 20, halign: 'center' },
+            6: { cellWidth: 26, halign: 'right', fontStyle: 'bold' }
+        },
+        margin: { left: 14, right: 14 }
+    });
+
+    // 6. Section Title: Cashier Register Performance & Shift Balancing
+    currentY = doc.lastAutoTable.finalY + 9;
+    if (currentY > 230) {
+        doc.addPage();
+        currentY = 20;
+    }
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor(15, 23, 42);
+    doc.text('4. CASHIER SHIFT RECONCILIATION & TILL BALANCING', 14, currentY);
+
+    const cashiersTableData = cashiersPerformanceList.map(c => {
+        const share = grossRev > 0 ? ((c.total_revenue / grossRev) * 100).toFixed(1) : '0.0';
+        return [
+            `${c.name} (@${c.username})`,
+            c.tx_count.toString(),
+            `KSh ${c.cash_collected.toLocaleString(undefined, { minimumFractionDigits: 2 })}`,
+            `KSh ${c.mpesa_collected.toLocaleString(undefined, { minimumFractionDigits: 2 })}`,
+            `KSh ${c.debt_issued.toLocaleString(undefined, { minimumFractionDigits: 2 })}`,
+            `KSh ${c.total_revenue.toLocaleString(undefined, { minimumFractionDigits: 2 })}`,
+            `${share}%`
+        ];
+    });
+
+    doc.autoTable({
+        startY: currentY + 3,
+        head: [['Cashier Staff', 'Transactions', 'Cash Handled', 'M-Pesa Handled', 'Credit Issued', 'Total Generated', 'Share']],
+        body: cashiersTableData.length > 0 ? cashiersTableData : [['No cashier activity recorded during this period.', '', '', '', '', '', '']],
+        theme: 'striped',
+        headStyles: { fillColor: [51, 65, 85], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 7.5 },
+        styles: { fontSize: 7.5, cellPadding: 2 },
+        columnStyles: {
+            0: { cellWidth: 46 },
+            1: { cellWidth: 22, halign: 'center' },
+            2: { cellWidth: 28, halign: 'right' },
+            3: { cellWidth: 28, halign: 'right' },
+            4: { cellWidth: 28, halign: 'right' },
+            5: { cellWidth: 32, halign: 'right', fontStyle: 'bold' },
+            6: { cellWidth: 14, halign: 'center' }
+        },
+        margin: { left: 14, right: 14 }
+    });
+
+    // 7. Formal Dual Sign-off Blocks
+    currentY = doc.lastAutoTable.finalY + 14;
+    if (currentY > 240) {
+        doc.addPage();
+        currentY = 25;
+    }
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(15, 23, 42);
+    doc.text('5. AUDIT VERIFICATION & CERTIFICATION', 14, currentY);
+
+    currentY += 8;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(71, 85, 105);
+
+    // Box 1: Prepared by
+    doc.rect(14, currentY, 86, 26);
+    doc.setFont('helvetica', 'bold');
+    doc.text('PREPARED BY (Cashier / Shift Lead):', 17, currentY + 6);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Name: ${auditorName}`, 17, currentY + 12);
+    doc.text('Signature: __________________________', 17, currentY + 18);
+    doc.text(`Date: ${new Date().toLocaleDateString()}`, 17, currentY + 23);
+
+    // Box 2: Approved by
+    doc.rect(110, currentY, 86, 26);
+    doc.setFont('helvetica', 'bold');
+    doc.text('VERIFIED & APPROVED BY (Store Manager):', 113, currentY + 6);
+    doc.setFont('helvetica', 'normal');
+    doc.text('Name: _______________________________', 113, currentY + 12);
+    doc.text('Signature: __________________________', 113, currentY + 18);
+    doc.text('Date: _______________________________', 113, currentY + 23);
+
+    // 8. Auto Page Numbering on All Pages
+    const pageCount = doc.internal.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+        doc.setPage(i);
+        doc.setFontSize(7.5);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(148, 163, 184); // slate-400
+        doc.text(
+            `Page ${i} of ${pageCount}  •  Litaj Hardware Enterprise POS  •  Confidential Financial Audit`,
+            105,
+            290,
+            { align: 'center' }
+        );
+    }
+
+    // Save and download PDF
+    const filenameDate = selectedPeriod === 'today' 
+        ? getLocalDateString(new Date()) 
+        : `${selectedPeriod}_${getLocalDateString(new Date())}`;
+    doc.save(`Litaj_Hardware_Audit_Report_${filenameDate}.pdf`);
+}
+
+// --------------------------------------------------------------------
+// Utility Helpers
+// --------------------------------------------------------------------
+function formatDateTime(isoStr) {
+    if (!isoStr) return '-';
+    try {
+        const d = new Date(isoStr);
+        return d.toLocaleDateString([], { 
+            month: 'short', 
+            day: 'numeric', 
+            year: 'numeric',
+            hour: '2-digit', 
+            minute: '2-digit' 
+        });
+    } catch {
+        return isoStr;
+    }
+}
+
+function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+function isCashPayment(method) {
+    return (method || '').toLowerCase().includes('cash');
+}
+
+function isMpesaPayment(method) {
+    const m = (method || '').toLowerCase().replace(/[^a-z]/g, '');
+    return m.includes('mpesa');
+}
+

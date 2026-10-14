@@ -20,7 +20,8 @@ const suites = [
     { file: '07_sales_ledger_and_kpis.test.js', name: '07 - Today\'s Sales Ledger & Register KPI Aggregations' },
     { file: '08_offline_queue_sync.test.js', name: '08 - Offline Sales Queue & Cloud Synchronization' },
     { file: '09_store_settings_dynamic.test.js', name: '09 - Dynamic Store Configuration & Category Discovery' },
-    { file: '10_restock_and_suppliers.test.js', name: '10 - Restock & Supplier Orders Workflow (Zero Trust)' }
+    { file: '10_restock_and_suppliers.test.js', name: '10 - Restock & Supplier Orders Workflow (Zero Trust)' },
+    { file: '11_analytics_and_audit_report.test.js', name: '11 - Analytics Engine & Executive Audit PDF Data' }
 ];
 
 console.log('======================================================================');
@@ -36,6 +37,7 @@ const startTime = Date.now();
 for (const suite of suites) {
     const fullPath = path.join(__dirname, suite.file);
     const suiteStart = Date.now();
+    process.stdout.write(`⏳ Running: ${suite.name}...\n`);
     try {
         const output = execSync(`node "${fullPath}"`, {
             encoding: 'utf8',

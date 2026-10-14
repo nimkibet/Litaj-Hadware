@@ -1,4 +1,4 @@
-const CACHE_NAME = 'litaj-hardware-v12-remove-settings-page';
+const CACHE_NAME = 'litaj-hardware-v13-real-analytics-audit-pdf';
 
 // Only pre-cache the offline fallback page at install time.
 // Everything else gets cached as the user visits it (cache-on-navigate).

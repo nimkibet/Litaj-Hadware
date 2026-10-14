@@ -3,14 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Analytics | Litaj Hardware</title>
+    <title>Analytics & Financial Audit | Litaj Hardware</title>
     <link rel="manifest" href="/manifest.json">
     <meta name="theme-color" content="#1e293b">
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <style>
-        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: #f1f5f9; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
         ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
@@ -18,9 +19,9 @@
         @keyframes fadeIn { from { opacity: 0; transform: translateY(2px); } to { opacity: 1; transform: translateY(0); } }
     </style>
 </head>
-<body class="bg-gray-100 min-h-screen flex flex-col font-sans text-gray-800">
+<body class="bg-slate-50 min-h-screen flex flex-col font-sans text-slate-800">
 
-    <!-- Top Navigation Bar -->
+    <!-- Top Navigation Bar (Uniform Across All Pages) -->
     <nav class="bg-slate-900 text-white shadow-md flex-shrink-0 sticky top-0 z-40 border-b border-slate-800 pt-safe">
         <div class="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
             <div class="flex items-center justify-between h-14">
@@ -101,7 +102,7 @@
                 </button>
 
                 <!-- Collapsible Tile Body -->
-                <div id="collapsible-other-menus" class="p-2 space-y-1 bg-slate-900/60 border-t border-slate-800/60 ">
+                <div id="collapsible-other-menus" class="p-2 space-y-1 bg-slate-900/60 border-t border-slate-800/60">
                     <a href="/customers.html" class="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold admin-only hidden transition bg-slate-800/60 hover:bg-slate-800 text-slate-200">
                         <span class="text-base">👥</span>
                         <div class="flex flex-col">
@@ -150,148 +151,405 @@
         </div>
     </nav>
 
+    <!-- Main Content Body (Independently Scrollable with Safe Padding) -->
     <main class="flex-1 overflow-y-auto p-3 sm:p-6 max-w-7xl mx-auto w-full pb-28 sm:pb-12">
 
-        <!-- Header controls -->
-        <div class="bg-white px-4 py-3 rounded-xl shadow border mb-4">
-            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <h1 class="text-xl font-bold text-slate-800">Analytics</h1>
-                <div class="flex flex-wrap items-center gap-2">
-                    <select id="ana-period" class="text-sm bg-slate-100 border border-slate-300 rounded px-3 py-1.5 font-semibold focus:outline-none focus:ring-2 focus:ring-orange-500">
-                        <option value="today">Today</option>
-                        <option value="month">This Month</option>
-                        <option value="custom">Specific Day</option>
-                        <option value="custom-range">Custom Range</option>
-                    </select>
-                    <input type="date" id="ana-date" class="hidden text-sm bg-slate-100 border border-slate-300 rounded px-3 py-1.5 font-semibold focus:outline-none focus:ring-2 focus:ring-orange-500">
-                    <span id="ana-date-separator" class="hidden text-sm font-semibold text-slate-500">to</span>
-                    <input type="date" id="ana-date-end" class="hidden text-sm bg-slate-100 border border-slate-300 rounded px-3 py-1.5 font-semibold focus:outline-none focus:ring-2 focus:ring-orange-500">
-                    <label class="flex items-center gap-1.5 text-xs font-semibold text-slate-700 bg-slate-50 px-2.5 py-1.5 rounded border border-slate-300 cursor-pointer hover:bg-slate-100 select-none">
-                        <input type="checkbox" id="chk-include-bulk" class="h-3.5 w-3.5 text-orange-600 rounded">
-                        <span>Bulk &amp; Fixed</span>
-                    </label>
-                    <button id="btn-dl-report" class="text-sm bg-orange-600 hover:bg-orange-700 text-white font-bold px-3 py-1.5 rounded shadow transition-colors whitespace-nowrap">↓ PDF</button>
+        <!-- Top Header & Filter Bar -->
+        <div class="bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-slate-200 mb-6">
+            <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                <div>
+                    <div class="flex items-center gap-2 mb-1">
+                        <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                        <span class="text-xs font-black uppercase tracking-wider text-slate-500">Live Hardware Intelligence</span>
+                    </div>
+                    <h1 class="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">Analytics & Financial Audit</h1>
+                    <p class="text-xs sm:text-sm text-slate-500 font-medium">Real-time sales performance, itemized debt ledger, cashier shift reconciliation & PDF reports</p>
+                </div>
+
+                <!-- Date & Cashier Filters -->
+                <div class="flex flex-wrap items-center gap-2 sm:gap-2.5">
+                    <!-- Period Selector -->
+                    <div class="flex items-center bg-slate-100 px-2 py-1 rounded-xl border border-slate-300">
+                        <label for="ana-period" class="text-xs font-bold text-slate-500 mr-1.5">Period:</label>
+                        <select id="ana-period" class="text-xs sm:text-sm bg-white border border-slate-200 rounded-lg px-2.5 py-1 font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500 cursor-pointer shadow-sm">
+                            <option value="today">Today</option>
+                            <option value="yesterday">Yesterday</option>
+                            <option value="week">Last 7 Days</option>
+                            <option value="month">This Month</option>
+                            <option value="custom">Specific Day</option>
+                            <option value="custom-range">Custom Range</option>
+                            <option value="all">All Time</option>
+                        </select>
+                    </div>
+
+                    <!-- Date Inputs for Custom & Custom-range -->
+                    <div id="ana-custom-dates-container" class="hidden flex items-center gap-1.5 bg-slate-50 px-2 py-1 rounded-xl border border-slate-200">
+                        <input type="date" id="ana-date" class="text-xs bg-white border border-slate-300 rounded-lg px-2 py-1 font-semibold text-slate-700 focus:ring-2 focus:ring-orange-500">
+                        <span id="ana-date-separator" class="hidden text-xs font-bold text-slate-400">to</span>
+                        <input type="date" id="ana-date-end" class="hidden text-xs bg-white border border-slate-300 rounded-lg px-2 py-1 font-semibold text-slate-700 focus:ring-2 focus:ring-orange-500">
+                    </div>
+
+                    <!-- Cashier Filter -->
+                    <div class="flex items-center bg-slate-100 px-2 py-1 rounded-xl border border-slate-300">
+                        <label for="ana-cashier-filter" class="text-xs font-bold text-slate-500 mr-1.5">Staff:</label>
+                        <select id="ana-cashier-filter" class="text-xs sm:text-sm bg-white border border-slate-200 rounded-lg px-2 py-1 font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500 cursor-pointer shadow-sm">
+                            <option value="all">All Cashiers</option>
+                        </select>
+                    </div>
+
+                    <!-- Refresh Button -->
+                    <button id="btn-refresh-analytics" title="Reload live data" class="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 transition flex items-center justify-center border border-slate-300">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                    </button>
+
+                    <!-- PDF Download Button -->
+                    <button id="btn-dl-report" class="flex items-center gap-1.5 text-xs sm:text-sm bg-orange-600 hover:bg-orange-700 active:bg-orange-800 text-white font-black px-3.5 py-1.5 rounded-xl shadow-md transition-all whitespace-nowrap">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                        <span>Download Audit PDF</span>
+                    </button>
                 </div>
             </div>
         </div>
 
-        <!-- KPIs -->
-        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
-            <div class="bg-white p-4 rounded-xl shadow text-center border">
-                <div class="text-xs font-bold text-slate-500 uppercase mb-1">Transactions</div>
-                <div id="kpi-tx" class="text-3xl font-black">0</div>
-            </div>
-            <div class="bg-white p-4 rounded-xl shadow text-center border">
-                <div class="text-xs font-bold text-slate-500 uppercase mb-1">Gross Sales</div>
-                <div id="kpi-rev" class="text-xl font-black text-slate-700">Ksh 0</div>
-            </div>
-            <div class="bg-white p-4 rounded-xl shadow text-center border relative group">
-                <div class="text-xs font-bold text-red-500 uppercase mb-1">Expenses</div>
-                <div id="kpi-exp" class="text-xl font-black text-red-600">Ksh 0</div>
-                <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-44 p-2 bg-slate-800 text-white text-xs rounded shadow-lg hidden group-hover:block z-10">
-                    Logged expenses &amp; opened resources
+        <!-- 6 Core Financial KPI Cards -->
+        <div class="grid grid-cols-2 lg:grid-cols-6 gap-3 sm:gap-4 mb-6">
+            <!-- Gross Revenue -->
+            <div class="bg-white p-3.5 sm:p-4 rounded-2xl shadow-sm border border-slate-200 flex flex-col justify-between">
+                <div class="flex items-center justify-between mb-1.5">
+                    <span class="text-[11px] font-black uppercase tracking-wider text-slate-500">Gross Sales</span>
+                    <span class="w-6 h-6 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center text-xs font-black">📈</span>
+                </div>
+                <div>
+                    <div id="kpi-rev" class="text-lg sm:text-xl font-black text-slate-900 tracking-tight">KSh 0.00</div>
+                    <div class="text-[10px] text-slate-500 font-medium mt-0.5">Sales billed in period</div>
                 </div>
             </div>
-            <div class="bg-white p-4 rounded-xl shadow text-center border">
-                <div class="text-xs font-bold text-orange-500 uppercase mb-1">Net Profit</div>
-                <div id="kpi-profit" class="text-xl font-black text-orange-600">Ksh 0</div>
+
+            <!-- Gross Profit -->
+            <div class="bg-white p-3.5 sm:p-4 rounded-2xl shadow-sm border border-slate-200 flex flex-col justify-between">
+                <div class="flex items-center justify-between mb-1.5">
+                    <span class="text-[11px] font-black uppercase tracking-wider text-emerald-600">Gross Profit</span>
+                    <span class="w-6 h-6 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center text-xs font-black">💰</span>
+                </div>
+                <div>
+                    <div id="kpi-profit" class="text-lg sm:text-xl font-black text-emerald-600 tracking-tight">KSh 0.00</div>
+                    <div id="kpi-margin-pct" class="text-[10px] text-emerald-700 font-bold mt-0.5">Margin: 0.0%</div>
+                </div>
+            </div>
+
+            <!-- Cash in Till -->
+            <div class="bg-white p-3.5 sm:p-4 rounded-2xl shadow-sm border border-slate-200 flex flex-col justify-between">
+                <div class="flex items-center justify-between mb-1.5">
+                    <span class="text-[11px] font-black uppercase tracking-wider text-slate-600">Cash in Till</span>
+                    <span class="w-6 h-6 rounded-lg bg-emerald-100/60 text-emerald-700 flex items-center justify-center text-xs font-black">💵</span>
+                </div>
+                <div>
+                    <div id="kpi-cash" class="text-lg sm:text-xl font-black text-slate-800 tracking-tight">KSh 0.00</div>
+                    <div class="text-[10px] text-slate-500 font-medium mt-0.5">Cash sales &amp; repayments</div>
+                </div>
+            </div>
+
+            <!-- M-Pesa Verified -->
+            <div class="bg-white p-3.5 sm:p-4 rounded-2xl shadow-sm border border-slate-200 flex flex-col justify-between">
+                <div class="flex items-center justify-between mb-1.5">
+                    <span class="text-[11px] font-black uppercase tracking-wider text-emerald-600">M-Pesa Verified</span>
+                    <span class="w-6 h-6 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center text-xs font-black">📱</span>
+                </div>
+                <div>
+                    <div id="kpi-mpesa" class="text-lg sm:text-xl font-black text-emerald-700 tracking-tight">KSh 0.00</div>
+                    <div class="text-[10px] text-slate-500 font-medium mt-0.5">Till / Mobile deposits</div>
+                </div>
+            </div>
+
+            <!-- Debt Issued (Credit Given) -->
+            <div class="bg-white p-3.5 sm:p-4 rounded-2xl shadow-sm border border-orange-200/80 bg-orange-50/20 flex flex-col justify-between">
+                <div class="flex items-center justify-between mb-1.5">
+                    <span class="text-[11px] font-black uppercase tracking-wider text-orange-600">Debt Issued</span>
+                    <span class="w-6 h-6 rounded-lg bg-orange-100 text-orange-600 flex items-center justify-center text-xs font-black">⚠️</span>
+                </div>
+                <div>
+                    <div id="kpi-debt-issued" class="text-lg sm:text-xl font-black text-orange-600 tracking-tight">KSh 0.00</div>
+                    <div id="kpi-debt-count" class="text-[10px] text-orange-700/80 font-bold mt-0.5">0 credit orders</div>
+                </div>
+            </div>
+
+            <!-- Debt Repaid (Collected) -->
+            <div class="bg-white p-3.5 sm:p-4 rounded-2xl shadow-sm border border-slate-200 flex flex-col justify-between">
+                <div class="flex items-center justify-between mb-1.5">
+                    <span class="text-[11px] font-black uppercase tracking-wider text-teal-600">Debt Collected</span>
+                    <span class="w-6 h-6 rounded-lg bg-teal-50 text-teal-600 flex items-center justify-center text-xs font-black">🤝</span>
+                </div>
+                <div>
+                    <div id="kpi-debt-collected" class="text-lg sm:text-xl font-black text-teal-700 tracking-tight">KSh 0.00</div>
+                    <div class="text-[10px] text-slate-500 font-medium mt-0.5">Debts recovered in period</div>
+                </div>
             </div>
         </div>
 
-        <div class="grid grid-cols-2 gap-3 mb-4">
-            <div class="bg-white p-4 rounded-xl shadow text-center border">
-                <div class="text-xs font-bold text-orange-500 uppercase mb-1">Debt Issued (Bad Debt)</div>
-                <div id="kpi-debt-issued" class="text-xl font-black text-orange-600">Ksh 0</div>
+        <!-- Secondary Register Summary Strip -->
+        <div class="bg-slate-900 text-slate-200 p-3 sm:p-4 rounded-2xl shadow-sm mb-6 flex flex-wrap items-center justify-between gap-3 text-xs sm:text-sm">
+            <div class="flex items-center gap-2">
+                <span class="text-base">📋</span>
+                <span class="font-bold">Total Transactions:</span>
+                <span id="kpi-tx-count" class="font-black text-white px-2 py-0.5 bg-slate-800 rounded-lg">0</span>
             </div>
-            <div class="bg-white p-4 rounded-xl shadow text-center border">
-                <div class="text-xs font-bold text-emerald-500 uppercase mb-1">Debt Collected (Good Debt)</div>
-                <div id="kpi-debt-collected" class="text-xl font-black text-emerald-600">Ksh 0</div>
+            <div class="flex items-center gap-2">
+                <span class="text-base">📦</span>
+                <span class="font-bold">Total Items Sold:</span>
+                <span id="kpi-units-count" class="font-black text-orange-400 px-2 py-0.5 bg-slate-800 rounded-lg">0 units</span>
+            </div>
+            <div class="flex items-center gap-2">
+                <span class="text-base">🏷️</span>
+                <span class="font-bold">Average Order Value:</span>
+                <span id="kpi-aov" class="font-black text-emerald-400 px-2 py-0.5 bg-slate-800 rounded-lg">KSh 0.00</span>
+            </div>
+            <div class="flex items-center gap-2">
+                <span class="text-base">⚠️</span>
+                <span class="font-bold">Low Stock Warning:</span>
+                <span id="kpi-low-stock-count" class="font-black text-red-400 px-2 py-0.5 bg-red-950/60 rounded-lg">0 items</span>
             </div>
         </div>
 
-
-        <!-- Charts Row 1 -->
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
-            <div class="bg-white p-4 rounded-xl shadow border">
-                <h2 class="text-base font-bold mb-3">Revenue by User</h2>
-                <div class="relative h-56 w-full"><canvas id="userChart"></canvas></div>
+        <!-- Charts Row (Payment Split, Top Selling Products, Cashier Roster) -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+            <!-- Payment Methods Doughnut -->
+            <div class="bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-slate-200 flex flex-col">
+                <div class="flex items-center justify-between mb-3">
+                    <h2 class="text-sm font-black text-slate-800 uppercase tracking-wide">Payment Channels Split</h2>
+                    <span class="text-xs text-slate-400 font-medium">Tender volume</span>
+                </div>
+                <div class="relative h-56 w-full flex items-center justify-center">
+                    <canvas id="paymentChart"></canvas>
+                </div>
             </div>
-            <div class="bg-white p-4 rounded-xl shadow border">
-                <h2 class="text-base font-bold mb-3">Payment Methods</h2>
-                <div class="relative h-56 w-full flex justify-center"><canvas id="methodChart"></canvas></div>
+
+            <!-- Top Selling Hardware Items Bar -->
+            <div class="bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-slate-200 flex flex-col">
+                <div class="flex items-center justify-between mb-3">
+                    <h2 class="text-sm font-black text-slate-800 uppercase tracking-wide">Top Products by Revenue</h2>
+                    <span class="text-xs text-slate-400 font-medium">Top 5 items</span>
+                </div>
+                <div class="relative h-56 w-full">
+                    <canvas id="itemsChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Cashier Sales Breakdown -->
+            <div class="bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-slate-200 flex flex-col">
+                <div class="flex items-center justify-between mb-3">
+                    <h2 class="text-sm font-black text-slate-800 uppercase tracking-wide">Sales by Cashier</h2>
+                    <span class="text-xs text-slate-400 font-medium">Shift performance</span>
+                </div>
+                <div class="relative h-56 w-full">
+                    <canvas id="cashierChart"></canvas>
+                </div>
             </div>
         </div>
 
-        <!-- Charts Row 2 -->
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
-            <div class="lg:col-span-2 bg-white p-4 rounded-xl shadow border">
-                <h2 class="text-base font-bold mb-3">Top Items Sold</h2>
-                <div class="relative h-56 w-full"><canvas id="itemsChart"></canvas></div>
+        <!-- Interactive Ledgers & Audit Matrices Section -->
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden mb-6">
+            <!-- Matrix Navigation Tabs -->
+            <div class="border-b border-slate-200 bg-slate-50/80 px-3 pt-3 flex flex-wrap gap-1 sm:gap-2">
+                <button type="button" data-tab="tab-products" class="tab-btn px-3.5 py-2.5 rounded-t-xl text-xs sm:text-sm font-black border-b-2 border-orange-600 bg-white text-orange-600 transition flex items-center gap-2 shadow-sm">
+                    <span>📦 Products Sold Matrix</span>
+                    <span id="badge-products-count" class="px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-orange-100 text-orange-700">0</span>
+                </button>
+                <button type="button" data-tab="tab-debt" class="tab-btn px-3.5 py-2.5 rounded-t-xl text-xs sm:text-sm font-bold border-b-2 border-transparent text-slate-600 hover:text-slate-900 transition flex items-center gap-2">
+                    <span>⚠️ Debt Issued (Credit Audit)</span>
+                    <span id="badge-debt-count" class="px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-slate-200 text-slate-700">0</span>
+                </button>
+                <button type="button" data-tab="tab-repayments" class="tab-btn px-3.5 py-2.5 rounded-t-xl text-xs sm:text-sm font-bold border-b-2 border-transparent text-slate-600 hover:text-slate-900 transition flex items-center gap-2">
+                    <span>💰 Debt Repayments</span>
+                    <span id="badge-repayments-count" class="px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-slate-200 text-slate-700">0</span>
+                </button>
+                <button type="button" data-tab="tab-cashiers" class="tab-btn px-3.5 py-2.5 rounded-t-xl text-xs sm:text-sm font-bold border-b-2 border-transparent text-slate-600 hover:text-slate-900 transition flex items-center gap-2">
+                    <span>👤 Cashier Staff Roster</span>
+                    <span id="badge-cashiers-count" class="px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-slate-200 text-slate-700">0</span>
+                </button>
+                <button type="button" data-tab="tab-lowstock" class="tab-btn px-3.5 py-2.5 rounded-t-xl text-xs sm:text-sm font-bold border-b-2 border-transparent text-slate-600 hover:text-slate-900 transition flex items-center gap-2">
+                    <span>🚨 Low Stock Watchlist (≤5)</span>
+                    <span id="badge-lowstock-count" class="px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-red-100 text-red-700">0</span>
+                </button>
             </div>
-            <div class="bg-white p-4 rounded-xl shadow border overflow-hidden flex flex-col">
-                <h2 class="text-base font-bold mb-3">User Leaderboard</h2>
-                <div class="flex-1 overflow-auto">
-                    <table class="w-full text-left text-sm">
-                        <thead class="bg-slate-50 sticky top-0">
-                            <tr><th class="py-2 px-3 text-xs font-bold text-slate-500 uppercase">User</th><th class="py-2 px-3 text-xs font-bold text-slate-500 uppercase text-right">Revenue</th></tr>
+
+            <!-- Tab Content 1: Products Sold Matrix (Grouped Items) -->
+            <div id="tab-products" class="tab-pane p-4 sm:p-5">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                    <div>
+                        <h3 class="text-base font-black text-slate-900">Grouped Products Sold Matrix</h3>
+                        <p class="text-xs text-slate-500 font-medium">Consolidated product sales with revenue, buying cost (COGS), profit &amp; margin calculations</p>
+                    </div>
+                    <div class="relative max-w-xs w-full">
+                        <input type="text" id="input-search-products" placeholder="Search sold items..." class="w-full text-xs bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 pl-8 font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500">
+                        <svg class="w-4 h-4 text-slate-400 absolute left-2.5 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                    </div>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs sm:text-sm">
+                        <thead class="bg-slate-100 text-slate-600 font-black uppercase text-[11px] tracking-wider border-y border-slate-200">
+                            <tr>
+                                <th class="py-3 px-3">Hardware Product</th>
+                                <th class="py-3 px-3">Category</th>
+                                <th class="py-3 px-3 text-center">Units Sold</th>
+                                <th class="py-3 px-3 text-right">Avg Price</th>
+                                <th class="py-3 px-3 text-right">Unit Cost</th>
+                                <th class="py-3 px-3 text-right">Revenue</th>
+                                <th class="py-3 px-3 text-right">COGS</th>
+                                <th class="py-3 px-3 text-right">Gross Profit</th>
+                                <th class="py-3 px-3 text-center">Margin</th>
+                            </tr>
                         </thead>
-                        <tbody id="user-tbody" class="divide-y divide-slate-100"></tbody>
+                        <tbody id="tbody-products-sold" class="divide-y divide-slate-100 font-medium">
+                            <tr><td colspan="9" class="py-8 text-center text-slate-400 font-semibold">Loading product metrics...</td></tr>
+                        </tbody>
+                        <tfoot id="tfoot-products-sold" class="bg-slate-100 font-black border-t-2 border-slate-300 text-xs sm:text-sm text-slate-900">
+                            <!-- Injected dynamically with column sums -->
+                        </tfoot>
                     </table>
                 </div>
             </div>
-        </div>
 
-        <!-- Expense & Deduction Breakdown (On Screen) -->
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
-            <div class="bg-white p-4 rounded-xl shadow border">
-                <h2 class="text-base font-bold mb-3 text-slate-800">Net Profit Math</h2>
-                <div class="space-y-2 text-sm font-medium text-slate-600" id="math-breakdown">
-                    <div class="flex justify-between"><span>Gross Profit</span><span id="math-gross">Ksh 0</span></div>
-                    <div class="flex justify-between text-red-500"><span>- Wages</span><span id="math-wages">Ksh 0</span></div>
-                    <div class="flex justify-between text-red-500"><span>- Fixed Bills</span><span id="math-fixed">Ksh 0</span></div>
-                    <div class="flex justify-between text-red-500"><span>- Opened Resources</span><span id="math-resources">Ksh 0</span></div>
-                    <div class="flex justify-between text-red-500"><span>- Other Expenses</span><span id="math-other">Ksh 0</span></div>
-                    <div class="pt-2 border-t border-slate-200 flex justify-between text-orange-600 font-bold text-base mt-2">
-                        <span>Net Profit</span><span id="math-net">Ksh 0</span>
+            <!-- Tab Content 2: Store Debt Issued Audit Ledger (Who took debt & What products) -->
+            <div id="tab-debt" class="tab-pane p-4 sm:p-5 hidden">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <span class="px-2 py-0.5 rounded text-[10px] font-black uppercase bg-orange-100 text-orange-700">Audit Proof</span>
+                            <h3 class="text-base font-black text-slate-900">Store Debt Issued (Who Took Credit &amp; What Was It)</h3>
+                        </div>
+                        <p class="text-xs text-slate-500 font-medium mt-0.5">Itemized hardware lines issued on credit accounts during this period</p>
+                    </div>
+                    <div id="debt-issued-summary-pill" class="px-3 py-1.5 bg-orange-50 border border-orange-200 rounded-xl text-xs font-black text-orange-700">
+                        Total Credit: KSh 0.00
                     </div>
                 </div>
-            </div>
-            <div class="bg-white p-4 rounded-xl shadow border overflow-hidden flex flex-col">
-                <h2 class="text-base font-bold mb-3 text-slate-800">Detailed Deductions</h2>
-                <div class="flex-1 overflow-auto">
-                    <table class="w-full text-left text-sm">
-                        <thead class="bg-slate-50 sticky top-0">
-                            <tr><th class="py-2 px-3 text-xs font-bold text-slate-500 uppercase">Item</th><th class="py-2 px-3 text-xs font-bold text-slate-500 uppercase text-right">Cost</th></tr>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs sm:text-sm">
+                        <thead class="bg-slate-100 text-slate-600 font-black uppercase text-[11px] tracking-wider border-y border-slate-200">
+                            <tr>
+                                <th class="py-3 px-3">Date / Time</th>
+                                <th class="py-3 px-3">Receipt #</th>
+                                <th class="py-3 px-3">Debtor (Customer)</th>
+                                <th class="py-3 px-3 min-w-[260px]">Itemized Products Taken on Credit</th>
+                                <th class="py-3 px-3 text-center">Cashier</th>
+                                <th class="py-3 px-3 text-right">Debt Amount</th>
+                            </tr>
                         </thead>
-                        <tbody id="deductions-tbody" class="divide-y divide-slate-100">
-                            <tr><td colspan="2" class="py-2 px-3 text-center text-slate-400">No deductions for this period</td></tr>
+                        <tbody id="tbody-debt-audit" class="divide-y divide-slate-100 font-medium">
+                            <tr><td colspan="6" class="py-8 text-center text-slate-400 font-semibold">Loading debt audit ledger...</td></tr>
+                        </tbody>
+                        <tfoot id="tfoot-debt-audit" class="bg-slate-100 font-black border-t-2 border-slate-300 text-xs sm:text-sm text-slate-900">
+                            <!-- Injected dynamically -->
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Tab Content 3: Debt Repayments Collected -->
+            <div id="tab-repayments" class="tab-pane p-4 sm:p-5 hidden">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                    <div>
+                        <h3 class="text-base font-black text-slate-900">Debt Collections &amp; Recoveries</h3>
+                        <p class="text-xs text-slate-500 font-medium">Customer balance pay-downs and debt clearance records</p>
+                    </div>
+                    <div id="debt-collected-summary-pill" class="px-3 py-1.5 bg-teal-50 border border-teal-200 rounded-xl text-xs font-black text-teal-700">
+                        Total Recovered: KSh 0.00
+                    </div>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs sm:text-sm">
+                        <thead class="bg-slate-100 text-slate-600 font-black uppercase text-[11px] tracking-wider border-y border-slate-200">
+                            <tr>
+                                <th class="py-3 px-3">Date / Time</th>
+                                <th class="py-3 px-3">Receipt #</th>
+                                <th class="py-3 px-3">Customer</th>
+                                <th class="py-3 px-3 text-center">Payment Channel</th>
+                                <th class="py-3 px-3">Notes &amp; Reference</th>
+                                <th class="py-3 px-3 text-center">Cashier</th>
+                                <th class="py-3 px-3 text-right">Amount Repaid</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbody-repayments" class="divide-y divide-slate-100 font-medium">
+                            <tr><td colspan="7" class="py-8 text-center text-slate-400 font-semibold">Loading repayment records...</td></tr>
+                        </tbody>
+                        <tfoot id="tfoot-repayments" class="bg-slate-100 font-black border-t-2 border-slate-300 text-xs sm:text-sm text-slate-900">
+                            <!-- Injected dynamically -->
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Tab Content 4: Cashier Performance & Register Reconciliation -->
+            <div id="tab-cashiers" class="tab-pane p-4 sm:p-5 hidden">
+                <div class="mb-4">
+                    <h3 class="text-base font-black text-slate-900">Cashier Register Performance &amp; Till Audit</h3>
+                    <p class="text-xs text-slate-500 font-medium">Breakdown of sales, cash handled, M-Pesa verified, and credit issued per staff member</p>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs sm:text-sm">
+                        <thead class="bg-slate-100 text-slate-600 font-black uppercase text-[11px] tracking-wider border-y border-slate-200">
+                            <tr>
+                                <th class="py-3 px-3">Cashier Staff</th>
+                                <th class="py-3 px-3 text-center">Transactions</th>
+                                <th class="py-3 px-3 text-right">Cash Handled</th>
+                                <th class="py-3 px-3 text-right">M-Pesa Handled</th>
+                                <th class="py-3 px-3 text-right">Debt Issued</th>
+                                <th class="py-3 px-3 text-right">Total Revenue</th>
+                                <th class="py-3 px-3 text-center">Contribution</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbody-cashiers" class="divide-y divide-slate-100 font-medium">
+                            <tr><td colspan="7" class="py-8 text-center text-slate-400 font-semibold">Loading cashier performance...</td></tr>
+                        </tbody>
+                        <tfoot id="tfoot-cashiers" class="bg-slate-100 font-black border-t-2 border-slate-300 text-xs sm:text-sm text-slate-900">
+                            <!-- Injected dynamically -->
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Tab Content 5: Low Stock Watchlist (≤ 5 units) -->
+            <div id="tab-lowstock" class="tab-pane p-4 sm:p-5 hidden">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                    <div>
+                        <h3 class="text-base font-black text-red-600 flex items-center gap-2">
+                            <span>🚨 Low Stock Replenishment Alert</span>
+                        </h3>
+                        <p class="text-xs text-slate-500 font-medium">Hardware items with 5 or fewer remaining units in stock</p>
+                    </div>
+                    <a href="/restock.html" class="px-3.5 py-1.5 bg-orange-600 hover:bg-orange-700 text-white rounded-xl text-xs font-black transition flex items-center gap-1.5 w-fit">
+                        <span>📥 Order Restock</span>
+                    </a>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs sm:text-sm">
+                        <thead class="bg-slate-100 text-slate-600 font-black uppercase text-[11px] tracking-wider border-y border-slate-200">
+                            <tr>
+                                <th class="py-3 px-3">Item Name</th>
+                                <th class="py-3 px-3">Category</th>
+                                <th class="py-3 px-3 text-center">Stock Left</th>
+                                <th class="py-3 px-3 text-right">Buying Price</th>
+                                <th class="py-3 px-3 text-right">Selling Price</th>
+                                <th class="py-3 px-3 text-center">Unit Margin</th>
+                                <th class="py-3 px-3 text-center">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbody-lowstock" class="divide-y divide-slate-100 font-medium">
+                            <tr><td colspan="7" class="py-8 text-center text-slate-400 font-semibold">Loading stock alerts...</td></tr>
                         </tbody>
                     </table>
                 </div>
             </div>
         </div>
 
-        <!-- Low Stock Alerts -->
-        <div class="bg-white p-4 rounded-xl shadow border mb-4">
-            <h2 class="text-base font-bold mb-3 text-red-600">Low Stock Alerts (≤ 5)</h2>
-            <div class="overflow-x-auto">
-                <table class="w-full text-left text-sm">
-                    <thead class="bg-slate-50 text-slate-600">
-                        <tr>
-                            <th class="py-2 px-3">Item Name</th>
-                            <th class="py-2 px-3 text-center">Remaining Stock</th>
-                            <th class="py-2 px-3 text-right">Selling Price</th>
-                        </tr>
-                    </thead>
-                    <tbody id="low-stock-tbody" class="divide-y divide-slate-100">
-                        <tr><td colspan="3" class="py-4 text-center text-slate-500 text-sm">Loading stock alerts...</td></tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
     </main>
 
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Scripts -->
     <script type="module" src="/js/analytics.js"></script>
 
     <script>
@@ -300,7 +558,6 @@
                 navigator.serviceWorker.register('/sw.js')
                     .then(reg => {
                         console.log('[SW] Registered, scope:', reg.scope);
-                        // Check for updates when the page loads
                         reg.update();
                     })
                     .catch(err => console.warn('[SW] Registration failed:', err));
