@@ -1,5 +1,6 @@
 import { supabase, currentUser, requireAuth } from './supabaseClient.js';
 import { insertSaleWithOfflineSupport, syncOfflineSales } from './offlineQueue.js';
+import { checkAndNotifyLowStock } from './notificationHelper.js';
 
 requireAuth();
 
@@ -164,11 +165,16 @@ window.addEventListener('resize', () => {
 // ====================================================================
 // Store Settings State (Dynamically loaded from database)
 let storeSettings = {
-    store_name: 'LITAJ HARDWARE',
-    store_tagline: 'Building & Construction Materials',
-    store_phone: '+254 700 000 000',
-    store_address: 'Main Commercial Center',
-    receipt_footer: 'Thank you for choosing Litaj Hardware! Goods once sold are not returnable.'
+    company_name: 'Litaj Hardware',
+    tagline: 'Building Materials & Construction Supplies',
+    store_email: 'info@litajhardware.co.ke',
+    phone_contact: '+254 700 000 000',
+    location_address: 'Main Hardware Yard, Commercial Street',
+    currency_symbol: 'KSh',
+    tax_rate: '0',
+    max_discount_pct: '50',
+    low_stock_threshold: '5',
+    receipt_footer: 'Thank you for building with Litaj Hardware! Goods once sold are not returnable without valid receipt.'
 };
 
 async function loadStoreSettings() {
@@ -177,12 +183,12 @@ async function loadStoreSettings() {
             const { data } = await supabase.from('settings').select('*');
             if (data && data.length > 0) {
                 data.forEach(s => {
-                    if (s.key && s.value) storeSettings[s.key] = s.value;
+                    if (s.key && s.value !== undefined) storeSettings[s.key] = s.value;
                 });
-                localStorage.setItem('litaj_settings_cache', JSON.stringify(storeSettings));
+                localStorage.setItem('lh_store_settings', JSON.stringify(storeSettings));
             }
         } else {
-            storeSettings = JSON.parse(localStorage.getItem('litaj_settings_cache') || JSON.stringify(storeSettings));
+            storeSettings = JSON.parse(localStorage.getItem('lh_store_settings') || JSON.stringify(storeSettings));
         }
     } catch (e) {
         console.warn('Could not load dynamic settings:', e.message);
@@ -233,11 +239,13 @@ async function loadInventory() {
 
         renderCategoryChips();
         renderCatalog();
+        checkAndNotifyLowStock(inventory, parseInt(storeSettings.low_stock_threshold || '5', 10));
     } catch (err) {
         console.warn('Failed to load inventory online, using local cache:', err.message);
         inventory = JSON.parse(localStorage.getItem('litaj_inventory_cache') || '[]');
         renderCategoryChips();
         renderCatalog();
+        checkAndNotifyLowStock(inventory, parseInt(storeSettings.low_stock_threshold || '5', 10));
     }
 }
 
@@ -446,23 +454,26 @@ resetInactivityTimer();
 // 2. CART MANAGEMENT (VEGAS POS LOGIC + MOBILE TOUCH CONTROLS)
 // ====================================================================
 function addToCart(product, qtyToAdd = 1) {
+    const validQty = Math.max(0, parseFloat(qtyToAdd) || 0);
+    if (validQty <= 0) return;
+
     const existingIndex = cart.findIndex(c => c.id === product.id);
 
     if (existingIndex > -1) {
-        cart[existingIndex].qty += qtyToAdd;
+        cart[existingIndex].qty += validQty;
         cart[existingIndex].total = cart[existingIndex].qty * cart[existingIndex].selling_price;
     } else {
         cart.push({
             id: product.id,
             name: product.name,
             category: product.category || 'General',
-            selling_price: parseFloat(product.selling_price || 0),
-            buying_price: parseFloat(product.buying_price || 0),
+            selling_price: Math.max(0, parseFloat(product.selling_price || 0)),
+            buying_price: Math.max(0, parseFloat(product.buying_price || 0)),
             stock_quantity: product.stock_quantity,
             is_service: product.is_service,
             barcode: product.barcode,
-            qty: qtyToAdd,
-            total: qtyToAdd * parseFloat(product.selling_price || 0)
+            qty: validQty,
+            total: validQty * Math.max(0, parseFloat(product.selling_price || 0))
         });
     }
 
@@ -482,10 +493,11 @@ function updateCartQty(productId, newQty) {
     const idx = cart.findIndex(c => c.id === productId);
     if (idx === -1) return;
 
-    if (newQty <= 0) {
+    const parsedQty = parseFloat(newQty);
+    if (isNaN(parsedQty) || parsedQty <= 0) {
         cart.splice(idx, 1);
     } else {
-        cart[idx].qty = newQty;
+        cart[idx].qty = parsedQty;
         cart[idx].total = cart[idx].qty * cart[idx].selling_price;
     }
     renderCart();
@@ -529,7 +541,28 @@ function renderCart() {
         subtotal += item.total;
     });
 
-    const discount = parseFloat(discountInput?.value || 0) || 0;
+    // 1. Discount must not be negative
+    let rawDiscount = parseFloat(discountInput?.value || 0) || 0;
+    if (rawDiscount < 0) {
+        rawDiscount = 0;
+        if (discountInput) discountInput.value = '0';
+    }
+
+    // 2. Discount must not be larger than 50% of the price / subtotal
+    const maxDiscount = subtotal * 0.50;
+    const discHint = document.getElementById('discount-limit-hint');
+    if (rawDiscount > maxDiscount) {
+        rawDiscount = maxDiscount;
+        if (discountInput) discountInput.value = maxDiscount > 0 ? maxDiscount.toFixed(2) : '0';
+        if (discHint) {
+            discHint.textContent = `Discount limit reached: Max 50% allowed (KSh ${maxDiscount.toFixed(2)})`;
+            discHint.classList.remove('hidden');
+        }
+    } else {
+        if (discHint) discHint.classList.add('hidden');
+    }
+
+    const discount = rawDiscount;
     const grandTotal = Math.max(0, subtotal - discount);
 
     const formattedSubtotal = `KSh ${subtotal.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
@@ -724,7 +757,10 @@ btnCancelCheckout?.addEventListener('click', () => {
 
 function getCartGrandTotal() {
     const subtotal = cart.reduce((acc, i) => acc + i.total, 0);
-    const discount = parseFloat(document.getElementById('cart-discount')?.value || 0) || 0;
+    let rawDiscount = parseFloat(document.getElementById('cart-discount')?.value || 0) || 0;
+    if (rawDiscount < 0) rawDiscount = 0;
+    const maxDiscount = subtotal * 0.50;
+    const discount = Math.min(rawDiscount, maxDiscount);
     return Math.max(0, subtotal - discount);
 }
 
@@ -732,6 +768,10 @@ function openCheckout() {
     if (cart.length === 0) return alert('Your cart is empty. Please add items before checking out.');
 
     const grandTotal = getCartGrandTotal();
+    if (grandTotal <= 0) {
+        return alert('Checkout blocked: Grand total must be greater than zero. Discount cannot reduce total to zero or negative.');
+    }
+
     const totalDueEl = document.getElementById('checkout-total-due');
     if (totalDueEl) totalDueEl.textContent = `KSh ${grandTotal.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
 
@@ -951,6 +991,12 @@ async function processFinalSale() {
     errBox.classList.add('hidden');
 
     const grandTotal = getCartGrandTotal();
+    if (grandTotal <= 0) {
+        errBox.textContent = 'Invalid transaction: Total payable must be greater than zero.';
+        errBox.classList.remove('hidden');
+        return;
+    }
+
     const generateReceipt = document.getElementById('chk-generate-receipt')?.checked === true;
 
     let customerId = null;
@@ -958,9 +1004,14 @@ async function processFinalSale() {
     let tenderAmt = 0;
     let changeAmt = 0;
 
-    // Validate Payment Specifics
+    // Validate Payment Specifics (Strict No Negative Numbers)
     if (activePaymentMethod === 'Cash') {
         tenderAmt = parseFloat(cashTenderedInput.value || 0) || 0;
+        if (tenderAmt <= 0) {
+            errBox.textContent = 'Cash tendered must be greater than zero.';
+            errBox.classList.remove('hidden');
+            return;
+        }
         if (tenderAmt < grandTotal) {
             errBox.textContent = `Insufficient cash entered. Due: KSh ${grandTotal.toFixed(2)}, Tendered: KSh ${tenderAmt.toFixed(2)}`;
             errBox.classList.remove('hidden');
@@ -969,6 +1020,11 @@ async function processFinalSale() {
         changeAmt = tenderAmt - grandTotal;
     } else if (activePaymentMethod === 'M-Pesa') {
         const mpesaAmt = parseFloat(document.getElementById('mpesa-amount-input')?.value || 0) || grandTotal;
+        if (mpesaAmt <= 0) {
+            errBox.textContent = 'M-Pesa amount must be greater than zero.';
+            errBox.classList.remove('hidden');
+            return;
+        }
         if (mpesaAmt < grandTotal) {
             errBox.textContent = `Insufficient M-Pesa amount. Due: KSh ${grandTotal.toFixed(2)}, Entered: KSh ${mpesaAmt.toFixed(2)}`;
             errBox.classList.remove('hidden');
@@ -984,6 +1040,16 @@ async function processFinalSale() {
     } else if (activePaymentMethod === 'Split') {
         const c = parseFloat(splitCashInput.value || 0) || 0;
         const m = parseFloat(splitMpesaInput.value || 0) || 0;
+        if (c < 0 || m < 0) {
+            errBox.textContent = 'Split payment values cannot be negative.';
+            errBox.classList.remove('hidden');
+            return;
+        }
+        if (c + m <= 0) {
+            errBox.textContent = 'Split payment total must be greater than zero.';
+            errBox.classList.remove('hidden');
+            return;
+        }
         if (c + m < grandTotal) {
             errBox.textContent = `Split payment total (KSh ${(c+m).toFixed(2)}) is less than Grand Total Due (KSh ${grandTotal.toFixed(2)})`;
             errBox.classList.remove('hidden');
@@ -1149,26 +1215,46 @@ function buildReceiptPDFDoc(receiptNo, items, grandTotal, method, tendered, chan
     const cust = customerId ? (customers.find(c => c.id === customerId) || null) : null;
 
     // Header (Dynamically loaded from database settings)
+    const company = (storeSettings.company_name || storeSettings.store_name || "LITAJ HARDWARE").toUpperCase();
+    const tagline = storeSettings.tagline || storeSettings.store_tagline || "Building & Construction Materials";
+    const phone = storeSettings.phone_contact || storeSettings.store_phone || "+254 700 000 000";
+    const email = storeSettings.store_email || "";
+    const location = storeSettings.location_address || storeSettings.store_address || "";
+
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(14);
-    doc.text(storeSettings.store_name || "LITAJ HARDWARE", 40, 10, { align: "center" });
+    doc.setFontSize(13);
+    doc.text(company, 40, 9, { align: "center" });
 
-    doc.setFontSize(8);
+    doc.setFontSize(7.5);
     doc.setFont("helvetica", "normal");
-    doc.text(storeSettings.store_tagline || "Building & Construction Materials", 40, 14, { align: "center" });
-    if (storeSettings.store_phone) {
-        doc.text(`Tel: ${storeSettings.store_phone}`, 40, 18, { align: "center" });
+    doc.text(tagline, 40, 13, { align: "center" });
+    doc.text(`Tel: ${phone}`, 40, 17, { align: "center" });
+    let headerY = 17;
+    if (email) {
+        headerY += 3.5;
+        doc.text(`Email: ${email}`, 40, headerY, { align: "center" });
     }
-    doc.text("--------------------------------------------------", 40, 22, { align: "center" });
+    if (location) {
+        headerY += 3.5;
+        doc.text(`Yard: ${location}`, 40, headerY, { align: "center" });
+    }
 
-    doc.text(`Receipt: ${receiptNo}`, 4, 27);
-    doc.text(`Date: ${new Date().toLocaleString()}`, 4, 31);
-    doc.text(`Cashier: ${currentUser ? (currentUser.full_name || currentUser.username) : 'Staff'}`, 4, 35);
+    headerY += 3;
+    doc.text("--------------------------------------------------", 40, headerY, { align: "center" });
+
+    headerY += 4;
+    doc.text(`Receipt: ${receiptNo}`, 4, headerY);
+    headerY += 4;
+    doc.text(`Date: ${new Date().toLocaleString()}`, 4, headerY);
+    headerY += 4;
+    doc.text(`Cashier: ${currentUser ? (currentUser.full_name || currentUser.username) : 'Staff'}`, 4, headerY);
     if (cust) {
-        doc.text(`Customer: ${cust.name}`, 4, 39);
+        headerY += 4;
+        doc.text(`Customer: ${cust.name}`, 4, headerY);
     }
 
-    doc.text("--------------------------------------------------", 40, 43, { align: "center" });
+    headerY += 3;
+    doc.text("--------------------------------------------------", 40, headerY, { align: "center" });
 
     // Table of items
     const tableData = items.map(i => [
@@ -1179,7 +1265,7 @@ function buildReceiptPDFDoc(receiptNo, items, grandTotal, method, tendered, chan
     ]);
 
     doc.autoTable({
-        startY: 45,
+        startY: headerY + 2,
         head: [['Item', 'Qty', 'Price', 'Total']],
         body: tableData,
         theme: 'plain',

@@ -58,3 +58,4 @@ logs/
 *.sqlite
 *.sqlite3
 pos.db
+scratch/

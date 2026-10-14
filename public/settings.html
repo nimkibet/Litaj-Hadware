@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Store & System Settings | Litaj Hardware</title>
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#1e293b">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        body { animation: fadeIn 0.2s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(2px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body class="bg-slate-50 min-h-screen flex flex-col font-sans text-slate-800">
+
+    <!-- Top Navigation Bar (Uniform Across All Pages) -->
+    <nav class="bg-slate-900 text-white shadow-md flex-shrink-0 sticky top-0 z-40 border-b border-slate-800 pt-safe">
+        <div class="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-14">
+                <!-- Brand Logo & Name -->
+                <div class="flex items-center gap-2 sm:gap-2.5">
+                    <a href="/pos.html" class="flex items-center gap-2 sm:gap-2.5 hover:opacity-90 transition flex-shrink-0">
+                        <span class="w-8 h-8 rounded-lg bg-orange-600 flex items-center justify-center font-black text-white text-sm shadow">LH</span>
+                        <span class="text-base sm:text-lg font-black tracking-tight text-white leading-none">Litaj <span class="text-orange-500">Hardware</span></span>
+                    </a>
+                </div>
+
+                <!-- Mobile View Controls (Current Page Pill + Collapsible Menu Trigger) -->
+                <div class="flex lg:hidden items-center gap-2">
+                    <span class="px-2.5 py-1 text-[11px] font-bold rounded-lg bg-slate-800 border border-slate-700 text-orange-400 truncate max-w-[130px]">
+                        Store Settings
+                    </span>
+                    <button id="mobile-menu-btn" type="button" aria-label="Toggle navigation menu" class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 active:bg-slate-950 border border-slate-700 text-slate-200 text-xs font-bold transition focus:outline-none">
+                        <span>Menu</span>
+                        <svg id="mobile-menu-chevron" class="h-4 w-4 transition-transform duration-200 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                        </svg>
+                    </button>
+                </div>
+
+                <!-- Desktop Menu (1024px+) -->
+                <div class="hidden lg:flex items-center space-x-1 sm:space-x-1.5">
+                    <a href="/pos.html" class="px-2.5 sm:px-3 py-1.5 text-xs font-bold rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 transition">POS</a>
+                    <a href="/inventory.html" class="px-2.5 sm:px-3 py-1.5 text-xs font-bold rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 transition">Inventory</a>
+                    <a href="/restock.html" class="px-2.5 sm:px-3 py-1.5 text-xs font-bold rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 transition">Restock</a>
+                    <a href="/customers.html" class="px-2.5 sm:px-3 py-1.5 text-xs font-bold rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 transition admin-only hidden">Customers</a>
+                    <a href="/users.html" class="px-2.5 sm:px-3 py-1.5 text-xs font-bold rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 transition admin-only hidden">Users</a>
+                    <a href="/admin.html" class="px-2.5 sm:px-3 py-1.5 text-xs font-bold rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 transition admin-only hidden">Admin</a>
+                    <a href="/analytics.html" class="px-2.5 sm:px-3 py-1.5 text-xs font-bold rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 transition admin-only hidden">Analytics</a>
+                    <a href="/settings.html" class="px-2.5 sm:px-3 py-1.5 text-xs font-bold rounded-xl bg-orange-600 text-white shadow transition admin-only hidden">Settings</a>
+                    <a href="/profile.html" class="px-2.5 sm:px-3 py-1.5 text-xs font-bold rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 transition">Profile</a>
+                    <button id="btn-logout" class="px-2.5 sm:px-3 py-1.5 text-xs font-bold rounded-xl border border-slate-700 hover:bg-red-950/50 hover:border-red-800 text-red-400 transition ml-1 sm:ml-2">Logout</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Mobile Menu (Collapsible Tiles & Independently Scrollable Container) -->
+        <div id="mobile-menu" class="hidden lg:hidden fixed inset-x-0 top-14 bg-slate-900/98 backdrop-blur-md border-b border-slate-800 shadow-2xl z-50 overflow-y-auto overscroll-contain max-h-[calc(100dvh-3.5rem)] p-3 sm:p-4 space-y-3">
+            
+            <!-- Quick Core Operations Tiles (Grid of 3) -->
+            <div>
+                <div class="text-[10px] font-black uppercase tracking-wider text-slate-400 px-1 mb-1.5 flex items-center justify-between">
+                    <span>⚡ Daily Register Operations</span>
+                    <span class="text-slate-500">Quick Access</span>
+                </div>
+                <div class="grid grid-cols-3 gap-2">
+                    <a href="/pos.html" class="flex flex-col items-center justify-center p-2.5 rounded-xl border transition bg-slate-800/90 hover:bg-slate-800 text-slate-200 border-slate-700/80">
+                        <span class="text-xl mb-1">🛒</span>
+                        <span class="text-xs font-bold leading-tight">POS</span>
+                    </a>
+                    <a href="/inventory.html" class="flex flex-col items-center justify-center p-2.5 rounded-xl border transition bg-slate-800/90 hover:bg-slate-800 text-slate-200 border-slate-700/80">
+                        <span class="text-xl mb-1">📦</span>
+                        <span class="text-xs font-bold leading-tight">Inventory</span>
+                    </a>
+                    <a href="/restock.html" class="flex flex-col items-center justify-center p-2.5 rounded-xl border transition bg-slate-800/90 hover:bg-slate-800 text-slate-200 border-slate-700/80">
+                        <span class="text-xl mb-1">📥</span>
+                        <span class="text-xs font-bold leading-tight">Restock</span>
+                    </a>
+                </div>
+            </div>
+
+            <!-- Collapsible Tile: Other Menus & Management -->
+            <div class="border border-slate-800 rounded-2xl bg-slate-800/40 overflow-hidden">
+                <button id="toggle-other-menus-btn" type="button" class="w-full flex items-center justify-between px-3.5 py-3 bg-slate-800/80 hover:bg-slate-800 active:bg-slate-750 text-left transition">
+                    <div class="flex items-center gap-2.5">
+                        <span class="w-7 h-7 rounded-lg bg-orange-600/20 text-orange-400 flex items-center justify-center text-xs font-bold">📂</span>
+                        <div>
+                            <span class="text-xs font-black text-white block">Other Menus &amp; Management</span>
+                            <span class="text-[10px] text-slate-400 font-medium block">Clients, staff, analytics, reports &amp; profile</span>
+                        </div>
+                    </div>
+                    <svg id="chevron-other-menus" class="h-4 w-4 text-slate-400 transition-transform duration-200 rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                    </svg>
+                </button>
+
+                <!-- Collapsible Tile Body -->
+                <div id="collapsible-other-menus" class="p-2 space-y-1 bg-slate-900/60 border-t border-slate-800/60">
+                    <a href="/customers.html" class="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold admin-only hidden transition bg-slate-800/60 hover:bg-slate-800 text-slate-200">
+                        <span class="text-base">👥</span>
+                        <div class="flex flex-col">
+                            <span>Customers &amp; Debt Ledger</span>
+                            <span class="text-[10px] font-normal opacity-75">Balances, itemized credit &amp; statements</span>
+                        </div>
+                    </a>
+                    <a href="/users.html" class="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold admin-only hidden transition bg-slate-800/60 hover:bg-slate-800 text-slate-200">
+                        <span class="text-base">🛡️</span>
+                        <div class="flex flex-col">
+                            <span>Users &amp; Cashier Staff</span>
+                            <span class="text-[10px] font-normal opacity-75">Roles, PIN security &amp; shift audits</span>
+                        </div>
+                    </a>
+                    <a href="/admin.html" class="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold admin-only hidden transition bg-slate-800/60 hover:bg-slate-800 text-slate-200">
+                        <span class="text-base">⚡</span>
+                        <div class="flex flex-col">
+                            <span>Admin Dashboard</span>
+                            <span class="text-[10px] font-normal opacity-75">Quick status &amp; store health</span>
+                        </div>
+                    </a>
+                    <a href="/analytics.html" class="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold admin-only hidden transition bg-slate-800/60 hover:bg-slate-800 text-slate-200">
+                        <span class="text-base">📊</span>
+                        <div class="flex flex-col">
+                            <span>Analytics &amp; Financial KPIs</span>
+                            <span class="text-[10px] font-normal opacity-75">Sales trends, profit &amp; revenue metrics</span>
+                        </div>
+                    </a>
+                    <a href="/settings.html" class="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold admin-only hidden transition bg-orange-600 text-white shadow">
+                        <span class="text-base">⚙️</span>
+                        <div class="flex flex-col">
+                            <span>Store Settings</span>
+                            <span class="text-[10px] font-normal opacity-75">Email, phone, receipts &amp; parameters</span>
+                        </div>
+                    </a>
+                    <a href="/profile.html" class="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold transition bg-slate-800/60 hover:bg-slate-800 text-slate-200">
+                        <span class="text-base">👤</span>
+                        <div class="flex flex-col">
+                            <span>My Profile</span>
+                            <span class="text-[10px] font-normal opacity-75">Change security PIN &amp; credentials</span>
+                        </div>
+                    </a>
+                </div>
+            </div>
+
+            <!-- Terminal Sign Out Action -->
+            <div class="pt-1 pb-1">
+                <button id="btn-logout-mobile" class="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-xs font-bold text-red-400 hover:text-white bg-red-950/40 hover:bg-red-900/70 border border-red-900/60 transition">
+                    <span>🚪</span>
+                    <span>Sign Out of Terminal</span>
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content Container -->
+    <main class="flex-1 overflow-y-auto p-3 sm:p-6 max-w-7xl mx-auto w-full pb-28 sm:pb-12">
+
+        <!-- Top Header & Actions -->
+        <div class="bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-slate-200 mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+                <div class="flex items-center gap-2 mb-1">
+                    <span class="w-2.5 h-2.5 rounded-full bg-orange-500"></span>
+                    <span class="text-xs font-black uppercase tracking-wider text-slate-500">System Configuration</span>
+                </div>
+                <h1 class="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">Store Settings &amp; Parameters</h1>
+                <p class="text-xs sm:text-sm text-slate-500 font-medium">Manage store contact details, email, receipt templates, discount boundaries &amp; system alerts</p>
+            </div>
+
+            <div class="flex items-center gap-2">
+                <button id="btn-save-settings" type="button" class="flex items-center gap-2 text-xs sm:text-sm bg-orange-600 hover:bg-orange-700 active:bg-orange-800 text-white font-black px-4 py-2.5 rounded-xl shadow-md transition-all whitespace-nowrap">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                    <span>Save All Changes</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Success / Error Banner -->
+        <div id="settings-alert-banner" class="hidden mb-6 p-4 rounded-2xl border text-sm font-bold flex items-center justify-between">
+            <span id="settings-alert-text"></span>
+            <button type="button" onclick="this.parentElement.classList.add('hidden')" class="text-slate-400 hover:text-slate-600">✕</button>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+            <!-- Left 2 Columns: Configuration Forms -->
+            <div class="lg:col-span-2 space-y-6">
+
+                <!-- Card 1: Store Contact & Business Identity -->
+                <div class="bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-slate-200">
+                    <div class="flex items-center gap-2.5 mb-4 pb-3 border-b border-slate-100">
+                        <span class="w-8 h-8 rounded-xl bg-orange-100 text-orange-600 flex items-center justify-center font-bold text-sm">🏢</span>
+                        <div>
+                            <h2 class="text-base font-black text-slate-900">Business Identity &amp; Contacts</h2>
+                            <p class="text-xs text-slate-500">These details appear at the top of receipts, statements, and audit reports</p>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs sm:text-sm">
+                        <!-- Company Name -->
+                        <div class="sm:col-span-2">
+                            <label for="set-company-name" class="block font-bold text-slate-700 mb-1">Hardware Store Name <span class="text-red-500">*</span></label>
+                            <input type="text" id="set-company-name" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500" placeholder="e.g. Litaj Hardware Supplies">
+                        </div>
+
+                        <!-- Tagline -->
+                        <div class="sm:col-span-2">
+                            <label for="set-tagline" class="block font-bold text-slate-700 mb-1">Tagline / Business Slogan</label>
+                            <input type="text" id="set-tagline" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500" placeholder="e.g. Building Materials &amp; Construction Supplies">
+                        </div>
+
+                        <!-- Store Email -->
+                        <div>
+                            <label for="set-store-email" class="block font-bold text-slate-700 mb-1">Official Email Address <span class="text-red-500">*</span></label>
+                            <input type="email" id="set-store-email" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500" placeholder="e.g. info@litajhardware.co.ke">
+                        </div>
+
+                        <!-- Phone Number -->
+                        <div>
+                            <label for="set-phone-contact" class="block font-bold text-slate-700 mb-1">Store Phone Contact <span class="text-red-500">*</span></label>
+                            <input type="text" id="set-phone-contact" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500" placeholder="e.g. +254 700 000 000">
+                        </div>
+
+                        <!-- Physical Location -->
+                        <div class="sm:col-span-2">
+                            <label for="set-location-address" class="block font-bold text-slate-700 mb-1">Physical Location / Yard Address <span class="text-red-500">*</span></label>
+                            <input type="text" id="set-location-address" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500" placeholder="e.g. Main Hardware Yard, Commercial Street">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Card 2: Financial Boundaries & Document Settings -->
+                <div class="bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-slate-200">
+                    <div class="flex items-center gap-2.5 mb-4 pb-3 border-b border-slate-100">
+                        <span class="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center font-bold text-sm">🧾</span>
+                        <div>
+                            <h2 class="text-base font-black text-slate-900">Receipts &amp; Operational Boundaries</h2>
+                            <p class="text-xs text-slate-500">Configure financial rules, limits, currency, and footer notices</p>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs sm:text-sm">
+                        <!-- Currency Symbol -->
+                        <div>
+                            <label for="set-currency-symbol" class="block font-bold text-slate-700 mb-1">Currency Symbol</label>
+                            <input type="text" id="set-currency-symbol" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500" placeholder="e.g. KSh">
+                        </div>
+
+                        <!-- Tax Rate % -->
+                        <div>
+                            <label for="set-tax-rate" class="block font-bold text-slate-700 mb-1">Default Tax Rate (%)</label>
+                            <input type="number" id="set-tax-rate" min="0" max="100" step="0.1" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500" placeholder="0">
+                        </div>
+
+                        <!-- Max Discount % (Enforces User Rule: Max 50%) -->
+                        <div>
+                            <label for="set-max-discount-pct" class="block font-bold text-slate-700 mb-1">
+                                Max Allowable Discount (%) <span class="text-xs font-semibold text-orange-600">(Max 50%)</span>
+                            </label>
+                            <input type="number" id="set-max-discount-pct" min="0" max="50" step="1" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500" value="50">
+                            <span class="text-[10px] text-slate-500 font-medium block mt-1">Cashiers cannot grant discounts larger than this percentage of subtotal.</span>
+                        </div>
+
+                        <!-- Low Stock Threshold -->
+                        <div>
+                            <label for="set-low-stock-threshold" class="block font-bold text-slate-700 mb-1">
+                                Low Stock Alert Threshold (Units)
+                            </label>
+                            <input type="number" id="set-low-stock-threshold" min="1" max="1000" step="1" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500" value="5">
+                            <span class="text-[10px] text-slate-500 font-medium block mt-1">Triggers system/mobile push notification when stock falls &le; this count.</span>
+                        </div>
+
+                        <!-- Receipt Footer Policy -->
+                        <div class="sm:col-span-2">
+                            <label for="set-receipt-footer" class="block font-bold text-slate-700 mb-1">Receipt Footer Policy / Note</label>
+                            <textarea id="set-receipt-footer" rows="2" class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500" placeholder="Thank you for building with Litaj Hardware! Goods once sold are not returnable without valid receipt."></textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Card 3: Literal Device & Mobile Notifications -->
+                <div class="bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-slate-200">
+                    <div class="flex items-center gap-2.5 mb-4 pb-3 border-b border-slate-100">
+                        <span class="w-8 h-8 rounded-xl bg-sky-100 text-sky-600 flex items-center justify-center font-bold text-sm">🔔</span>
+                        <div>
+                            <h2 class="text-base font-black text-slate-900">Literal Device &amp; Phone Push Alerts</h2>
+                            <p class="text-xs text-slate-500">Deliver instant notifications to your computer or mobile screen when hardware stock is low</p>
+                        </div>
+                    </div>
+
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-xl bg-slate-50 border border-slate-200">
+                        <div>
+                            <div class="flex items-center gap-2">
+                                <span class="font-bold text-xs sm:text-sm text-slate-800">Browser / Device Notification Status:</span>
+                                <span id="notification-permission-badge" class="px-2 py-0.5 rounded text-[11px] font-black uppercase bg-slate-200 text-slate-700">Checking...</span>
+                            </div>
+                            <p class="text-xs text-slate-500 mt-1">Allows this terminal to ring or vibrate your device when stock runs below the replenishment threshold.</p>
+                        </div>
+
+                        <div class="flex items-center gap-2 flex-shrink-0">
+                            <button id="btn-request-notification" type="button" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-black transition">
+                                Enable Alerts
+                            </button>
+                            <button id="btn-test-notification" type="button" class="px-3 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-black transition">
+                                Test Alert
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Right Column: Live Receipt & Document Preview -->
+            <div class="space-y-6">
+                <div class="bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-slate-200 sticky top-20">
+                    <div class="flex items-center justify-between mb-3 pb-2 border-b border-slate-100">
+                        <h3 class="text-xs font-black text-slate-500 uppercase tracking-wider">Live Document Preview</h3>
+                        <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">Real-time sync</span>
+                    </div>
+
+                    <!-- Thermal Receipt Paper Mockup -->
+                    <div class="bg-amber-50/40 p-4 rounded-xl border border-dashed border-amber-200 font-mono text-[11px] text-slate-700 space-y-2 shadow-inner">
+                        <!-- Store Header -->
+                        <div class="text-center pb-2 border-b border-dashed border-slate-300">
+                            <div id="preview-company-name" class="font-black text-sm uppercase text-slate-900">Litaj Hardware</div>
+                            <div id="preview-tagline" class="text-[10px] text-slate-500">Building Materials &amp; Construction Supplies</div>
+                            <div id="preview-contacts" class="text-[10px] text-slate-500 mt-0.5">Tel: +254 700 000 000</div>
+                            <div id="preview-email" class="text-[10px] text-slate-500">Email: info@litajhardware.co.ke</div>
+                            <div id="preview-location" class="text-[10px] text-slate-500">Main Hardware Yard, Commercial Street</div>
+                        </div>
+
+                        <!-- Sample Sale Item -->
+                        <div class="py-1 border-b border-dashed border-slate-300 space-y-1">
+                            <div class="flex justify-between font-bold">
+                                <span>Bamburi Tembo Cement (x2)</span>
+                                <span>KSh 1,500.00</span>
+                            </div>
+                            <div class="flex justify-between font-bold">
+                                <span>Nails 3" Heavy Duty (x1)</span>
+                                <span>KSh 150.00</span>
+                            </div>
+                        </div>
+
+                        <!-- Sample Totals -->
+                        <div class="space-y-0.5 pt-1">
+                            <div class="flex justify-between">
+                                <span>Subtotal:</span>
+                                <span>KSh 1,650.00</span>
+                            </div>
+                            <div class="flex justify-between text-orange-600 font-bold">
+                                <span>Discount (Max 50%):</span>
+                                <span>- KSh 50.00</span>
+                            </div>
+                            <div class="flex justify-between font-black text-xs text-slate-900 pt-1 border-t border-slate-300">
+                                <span>TOTAL PAID:</span>
+                                <span id="preview-currency-total">KSh 1,600.00</span>
+                            </div>
+                        </div>
+
+                        <!-- Receipt Footer -->
+                        <div class="pt-2 text-center text-[10px] text-slate-500 border-t border-dashed border-slate-300 italic">
+                            <span id="preview-footer">Thank you for building with Litaj Hardware! Goods once sold are not returnable without valid receipt.</span>
+                        </div>
+                    </div>
+
+                    <div class="mt-4 p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-600 space-y-1.5">
+                        <div class="flex items-center gap-1.5 font-bold text-slate-800">
+                            <span>🛡️ Zero-Trust Verification</span>
+                        </div>
+                        <p class="text-[11px] leading-relaxed">
+                            Changes saved here are stored centrally in Supabase and automatically apply across the POS checkout receipts, customer debt statements, and analytics PDF reports.
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+    </main>
+
+    <!-- Script imports -->
+    <script type="module" src="/js/settings.js"></script>
+
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js')
+                    .then(reg => {
+                        console.log('[SW] Registered, scope:', reg.scope);
+                        reg.update();
+                    })
+                    .catch(err => console.warn('[SW] Registration failed:', err));
+            });
+        }
+    </script>
+</body>
+</html>

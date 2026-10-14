@@ -55,6 +55,7 @@
                     <a href="/users.html" class="px-2.5 sm:px-3 py-1.5 text-xs font-bold rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 transition admin-only hidden">Users</a>
                     <a href="/admin.html" class="px-2.5 sm:px-3 py-1.5 text-xs font-bold rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 transition admin-only hidden">Admin</a>
                     <a href="/analytics.html" class="px-2.5 sm:px-3 py-1.5 text-xs font-bold rounded-xl bg-orange-600 text-white shadow transition admin-only hidden">Analytics</a>
+                    <a href="/settings.html" class="px-2.5 sm:px-3 py-1.5 text-xs font-bold rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 transition admin-only hidden">Settings</a>
                     <a href="/profile.html" class="px-2.5 sm:px-3 py-1.5 text-xs font-bold rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 transition">Profile</a>
                     <button id="btn-logout" class="px-2.5 sm:px-3 py-1.5 text-xs font-bold rounded-xl border border-slate-700 hover:bg-red-950/50 hover:border-red-800 text-red-400 transition ml-1 sm:ml-2">Logout</button>
                 </div>
@@ -129,6 +130,13 @@
                         <div class="flex flex-col">
                             <span>Analytics & Financial KPIs</span>
                             <span class="text-[10px] font-normal opacity-75">Sales trends, profit & revenue metrics</span>
+                        </div>
+                    </a>
+                                        <a href="/settings.html" class="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold admin-only hidden transition bg-slate-800/60 hover:bg-slate-800 text-slate-200">
+                        <span class="text-base">⚙️</span>
+                        <div class="flex flex-col">
+                            <span>Store Settings</span>
+                            <span class="text-[10px] font-normal opacity-75">Email, phone, receipts &amp; parameters</span>
                         </div>
                     </a>
                     <a href="/profile.html" class="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold transition bg-slate-800/60 hover:bg-slate-800 text-slate-200">
@@ -370,6 +378,10 @@
                     <span>🚨 Low Stock Watchlist (≤5)</span>
                     <span id="badge-lowstock-count" class="px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-red-100 text-red-700">0</span>
                 </button>
+                <button type="button" data-tab="tab-audit" class="tab-btn px-3.5 py-2.5 rounded-t-xl text-xs sm:text-sm font-bold border-b-2 border-transparent text-slate-600 hover:text-slate-900 transition flex items-center gap-2">
+                    <span>📈 Sales Peaks &amp; Budgeting Audit</span>
+                    <span id="badge-audit-count" class="px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-slate-200 text-slate-700">0</span>
+                </button>
             </div>
 
             <!-- Tab Content 1: Products Sold Matrix (Grouped Items) -->
@@ -543,6 +555,80 @@
                             <tr><td colspan="7" class="py-8 text-center text-slate-400 font-semibold">Loading stock alerts...</td></tr>
                         </tbody>
                     </table>
+                </div>
+            </div>
+
+            <!-- Tab Content 6: Sales Peaks, Budgeting Forecast & Audit Trail -->
+            <div id="tab-audit" class="tab-pane p-4 sm:p-5 hidden space-y-6">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200">
+                    <div>
+                        <h3 class="text-base font-black text-slate-900">Sales Velocity, Budgeting Forecast &amp; Audit Trail</h3>
+                        <p class="text-xs text-slate-500 font-medium">Which hardware products made the most sales when, procurement budgeting &amp; transaction audit events</p>
+                    </div>
+                    <button id="btn-dl-audit-trail-pdf" type="button" class="flex items-center gap-2 text-xs sm:text-sm bg-slate-900 hover:bg-slate-800 text-white font-black px-4 py-2 rounded-xl shadow-md transition-all whitespace-nowrap">
+                        <svg class="w-4 h-4 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                        <span>Download Audit Trail PDF</span>
+                    </button>
+                </div>
+
+                <!-- Section A: Sales Peaks & Time Window Analysis (Which made the most sales when) -->
+                <div>
+                    <h4 class="text-xs font-black uppercase tracking-wider text-slate-500 mb-2.5">⏰ Peak Sales Earning Windows (When &amp; What)</h4>
+                    <div id="peak-windows-container" class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <!-- Injected dynamically: Morning Peak, Afternoon Peak, Evening Peak -->
+                    </div>
+                </div>
+
+                <!-- Section B: Working Capital & Replenishment Budget Forecast -->
+                <div class="bg-slate-50 p-4 rounded-2xl border border-slate-200">
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+                        <div>
+                            <h4 class="text-sm font-black text-slate-900">💰 Recommended Replenishment Capital Forecast</h4>
+                            <p class="text-xs text-slate-500 font-medium">Estimated procurement budget required to restock depleted hardware items</p>
+                        </div>
+                        <div id="budget-forecast-total" class="px-3 py-1 rounded-xl bg-orange-100 text-orange-800 text-xs sm:text-sm font-black">
+                            Est. Budget: KSh 0.00
+                        </div>
+                    </div>
+
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-xs sm:text-sm">
+                            <thead class="bg-white text-slate-600 font-black uppercase text-[10px] tracking-wider border-y border-slate-200">
+                                <tr>
+                                    <th class="py-2.5 px-3">Depleted Item</th>
+                                    <th class="py-2.5 px-3 text-center">Current Stock</th>
+                                    <th class="py-2.5 px-3 text-center">Target Stock</th>
+                                    <th class="py-2.5 px-3 text-right">Unit Buying Price</th>
+                                    <th class="py-2.5 px-3 text-right">Recommended Budget</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tbody-budget-forecast" class="divide-y divide-slate-200/60 font-medium bg-white">
+                                <tr><td colspan="5" class="py-4 text-center text-slate-400">Loading replenishment budget forecast...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Section C: Security & Financial Audit Trail Events -->
+                <div>
+                    <h4 class="text-xs font-black uppercase tracking-wider text-slate-500 mb-2.5">🛡️ Financial Audit Log &amp; High-Impact Events</h4>
+                    <div class="overflow-x-auto border border-slate-200 rounded-xl">
+                        <table class="w-full text-left text-xs sm:text-sm">
+                            <thead class="bg-slate-100 text-slate-600 font-black uppercase text-[10px] tracking-wider border-b border-slate-200">
+                                <tr>
+                                    <th class="py-2.5 px-3">Timestamp</th>
+                                    <th class="py-2.5 px-3">Receipt / Ref</th>
+                                    <th class="py-2.5 px-3 text-center">Event Type</th>
+                                    <th class="py-2.5 px-3">Staff / Cashier</th>
+                                    <th class="py-2.5 px-3">Details &amp; Audit Notes</th>
+                                    <th class="py-2.5 px-3 text-right">Amount (KSh)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tbody-audit-events" class="divide-y divide-slate-100 font-medium">
+                                <tr><td colspan="6" class="py-6 text-center text-slate-400">Loading audit trail events...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>

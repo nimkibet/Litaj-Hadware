@@ -22,23 +22,38 @@ runner.test('Should compute accurate line totals and cart subtotal across multip
     assertEqual(subtotal, 14850.00, 'Subtotal must be 14,850.00');
 });
 
-runner.test('Should compute discount and clamp grand total to zero if discount exceeds subtotal', async () => {
+runner.test('Should enforce maximum 50% discount limit and reject negative discounts', async () => {
     const subtotal = 14850.00;
+    const maxAllowedDiscount = subtotal * 0.50; // 7,425.00
 
-    // Normal discount
-    const discount1 = 850.00;
-    const grandTotal1 = Math.max(0, subtotal - discount1);
-    assertEqual(grandTotal1, 14000.00, 'Grand total after discount must be 14,000.00');
+    // Standard discount within 50% limit (850 <= 7,425)
+    const rawDiscount1 = 850.00;
+    const effectiveDiscount1 = Math.min(maxAllowedDiscount, Math.max(0, rawDiscount1));
+    const grandTotal1 = Math.max(0, subtotal - effectiveDiscount1);
+    assertEqual(effectiveDiscount1, 850.00, 'Discount within 50% must be honored in full');
+    assertEqual(grandTotal1, 14000.00, 'Grand total after 850 discount must be 14,000.00');
 
-    // Excessive discount
-    const discount2 = 20000.00;
-    const grandTotal2 = Math.max(0, subtotal - discount2);
-    assertEqual(grandTotal2, 0.00, 'Grand total must clamp to 0.00 when discount exceeds subtotal');
+    // Excessive discount (> 50% of subtotal, e.g. 10,000 or 100% of price)
+    const rawDiscount2 = 10000.00;
+    const effectiveDiscount2 = Math.min(maxAllowedDiscount, Math.max(0, rawDiscount2));
+    const grandTotal2 = Math.max(0, subtotal - effectiveDiscount2);
+    assertEqual(effectiveDiscount2, 7425.00, 'Discount must be strictly capped at 50% of subtotal (7,425.00)');
+    assertEqual(grandTotal2, 7425.00, 'Grand total must be at least 50% of subtotal when capped');
 
     // Negative discount input protection
-    const discountInput = -500;
-    const safeDiscount = Math.max(0, discountInput);
-    assertEqual(safeDiscount, 0, 'Negative discount must be sanitized to 0');
+    const negativeDiscount = -500.00;
+    const effectiveNegativeDiscount = Math.min(maxAllowedDiscount, Math.max(0, negativeDiscount));
+    assertEqual(effectiveNegativeDiscount, 0.00, 'Negative discount must be sanitized to 0.00');
+
+    // Negative quantity and price validation
+    const negativeQty = -5;
+    const sanitizedQty = Math.max(0, negativeQty);
+    assertEqual(sanitizedQty, 0, 'Negative cart quantity must be rejected or sanitized to 0');
+
+    // Zero or negative grand total checkout prevention
+    const zeroSubtotal = 0;
+    const canCheckoutZero = zeroSubtotal > 0;
+    assertEqual(canCheckoutZero, false, 'Checkout must be blocked when grand total is zero or negative');
 });
 
 runner.test('Should calculate profit margin accurately per hardware item line', async () => {

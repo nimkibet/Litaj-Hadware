@@ -10,12 +10,16 @@ if (currentUser && currentUser.role !== 'admin') {
 // Application State
 // --------------------------------------------------------------------
 let rawSalesRows = [];
+let rawVoidedRows = [];
 let receiptGroupsList = [];
 let debtIssuedReceipts = [];
 let debtCollectionReceipts = [];
 let groupedProductsMatrix = [];
 let cashiersPerformanceList = [];
 let lowStockList = [];
+let salesPeakWindows = { morning: null, afternoon: null, evening: null };
+let replenishmentBudgetList = [];
+let financialAuditEvents = [];
 let storeSettings = {
     company_name: 'Litaj Hardware',
     phone_contact: '+254 700 000 000',
@@ -159,6 +163,11 @@ function initFilterControls() {
 
     btnPdf?.addEventListener('click', () => {
         generateAnalyticsAuditPDF();
+    });
+
+    const btnAuditPdf = document.getElementById('btn-dl-audit-trail-pdf');
+    btnAuditPdf?.addEventListener('click', () => {
+        generateAuditTrailBudgetingPDF();
     });
 
     searchProducts?.addEventListener('input', (e) => {
@@ -327,8 +336,25 @@ async function loadDashboard() {
 
         rawSalesRows = salesData || [];
 
+        // 5. Fetch Voided Sales Records for Financial Audit Trail
+        let voidQuery = supabase
+            .from('sales_log')
+            .select('*, inventory(id, name, category, unit_of_measure, buying_price, selling_price), users!sales_log_cashier_id_fkey(id, username, full_name), customers(id, name, phone)')
+            .eq('is_voided', true)
+            .order('timestamp', { ascending: false });
+
+        if (startISO) voidQuery = voidQuery.gte('timestamp', startISO);
+        if (endISO) voidQuery = voidQuery.lte('timestamp', endISO);
+        if (selectedCashier && selectedCashier !== 'all') {
+            voidQuery = voidQuery.eq('cashier_id', selectedCashier);
+        }
+
+        const { data: voidData } = await voidQuery;
+        rawVoidedRows = voidData || [];
+
         // Process and aggregate all metrics
         processAggregations();
+        processAuditAndBudgeting();
 
         // Render Dashboard Components
         renderKPIScorecards();
@@ -338,6 +364,9 @@ async function loadDashboard() {
         renderDebtRepaymentsLedger();
         renderCashierRoster();
         renderLowStockWatchlist();
+        renderSalesPeaks();
+        renderBudgetForecast();
+        renderAuditEvents();
 
     } catch (err) {
         console.error('[Analytics] Unexpected error loading dashboard:', err);
@@ -1526,4 +1555,548 @@ function isMpesaPayment(method) {
     const m = (method || '').toLowerCase().replace(/[^a-z]/g, '');
     return m.includes('mpesa');
 }
+
+// --------------------------------------------------------------------
+// Sales Velocity, Budgeting Forecast & Audit Trail Engine
+// --------------------------------------------------------------------
+function processAuditAndBudgeting() {
+    // 1. Sales Peaks & Velocity Windows
+    // Morning (06:00 - 11:59), Afternoon (12:00 - 16:59), Evening (17:00 - 23:59 / night)
+    const windows = {
+        morning: { label: 'Morning Shift', hours: '06:00 - 12:00', icon: '🌅', color: 'amber', tx_count: 0, units: 0, revenue: 0, itemsMap: {} },
+        afternoon: { label: 'Afternoon Shift', hours: '12:00 - 17:00', icon: '☀️', color: 'orange', tx_count: 0, units: 0, revenue: 0, itemsMap: {} },
+        evening: { label: 'Evening Shift', hours: '17:00 - 23:59', icon: '🌙', color: 'indigo', tx_count: 0, units: 0, revenue: 0, itemsMap: {} }
+    };
+
+    const countedReceipts = { morning: new Set(), afternoon: new Set(), evening: new Set() };
+
+    rawSalesRows.forEach(row => {
+        if (row.status === 'debt_collection') return;
+        const d = new Date(row.timestamp);
+        const hour = d.getHours();
+        let winKey = 'evening';
+        if (hour >= 6 && hour < 12) winKey = 'morning';
+        else if (hour >= 12 && hour < 17) winKey = 'afternoon';
+
+        const win = windows[winKey];
+        const rNo = row.receipt_no || `ROW-${row.id}`;
+        if (!countedReceipts[winKey].has(rNo)) {
+            countedReceipts[winKey].add(rNo);
+            win.tx_count++;
+        }
+
+        const qty = parseFloat(row.calculated_qty || 1);
+        const rev = parseFloat(row.total_charged || 0);
+        const itemId = row.item_id || row.inventory?.name || row.notes || 'Hardware Item';
+        const itemName = row.inventory?.name || row.notes || 'Hardware Item';
+        const category = row.inventory?.category || 'General';
+
+        win.units += qty;
+        win.revenue += rev;
+
+        if (!win.itemsMap[itemId]) {
+            win.itemsMap[itemId] = { id: itemId, name: itemName, category, units: 0, revenue: 0 };
+        }
+        win.itemsMap[itemId].units += qty;
+        win.itemsMap[itemId].revenue += rev;
+    });
+
+    Object.keys(windows).forEach(k => {
+        const win = windows[k];
+        const itemsArr = Object.values(win.itemsMap).sort((a, b) => b.revenue - a.revenue);
+        win.topProduct = itemsArr.length > 0 ? itemsArr[0] : null;
+    });
+
+    salesPeakWindows = windows;
+
+    // 2. Working Capital & Replenishment Budget Forecast
+    const threshold = parseInt(storeSettings.low_stock_threshold, 10) || 5;
+    const targetBuffer = Math.max(20, threshold * 3);
+
+    replenishmentBudgetList = lowStockList.map(item => {
+        const curr = parseFloat(item.stock_quantity || 0);
+        const needed = Math.max(1, targetBuffer - curr);
+        const buyingPrice = parseFloat(item.buying_price || 0);
+        const estBudget = needed * buyingPrice;
+        return {
+            ...item,
+            current_stock: curr,
+            target_stock: targetBuffer,
+            deficit_qty: needed,
+            unit_buying_price: buyingPrice,
+            recommended_budget: estBudget
+        };
+    }).sort((a, b) => b.recommended_budget - a.recommended_budget);
+
+    // 3. Security & Financial Audit Events
+    const events = [];
+
+    // Voided Sales
+    rawVoidedRows.forEach(v => {
+        events.push({
+            timestamp: v.timestamp,
+            receipt_no: v.receipt_no || `VOID-${v.id}`,
+            event_type: 'VOIDED_SALE',
+            badge_text: '⛔ VOIDED SALE',
+            badge_class: 'bg-red-100 text-red-800 border-red-300',
+            cashier: v.users?.full_name || v.users?.username || 'Staff',
+            details: `Voided transaction. Item: ${v.inventory?.name || v.notes || 'Hardware Item'}. Qty: ${v.calculated_qty || 1}. Restored to stock. Reason: ${v.notes || 'Voided by cashier'}.`,
+            amount: parseFloat(v.total_charged || 0)
+        });
+    });
+
+    // Credit Issued
+    debtIssuedReceipts.forEach(r => {
+        events.push({
+            timestamp: r.timestamp,
+            receipt_no: r.receipt_no,
+            event_type: 'CREDIT_ISSUED',
+            badge_text: '⚠️ STORE CREDIT',
+            badge_class: 'bg-orange-100 text-orange-800 border-orange-300',
+            cashier: r.cashier_name || r.cashier_username,
+            details: `Debtor: ${r.customer?.name || 'Walk-in'} (${r.customer?.phone || 'No phone'}). ${r.items.length} hardware lines issued on customer balance.`,
+            amount: r.total_charged
+        });
+    });
+
+    // Debt Collections
+    debtCollectionReceipts.forEach(r => {
+        events.push({
+            timestamp: r.timestamp,
+            receipt_no: r.receipt_no,
+            event_type: 'DEBT_COLLECTION',
+            badge_text: '🤝 DEBT RECOVERY',
+            badge_class: 'bg-teal-100 text-teal-800 border-teal-300',
+            cashier: r.cashier_name || r.cashier_username,
+            details: `Customer: ${r.customer?.name || 'Customer'}. Settled via ${r.payment_method}. ${r.notes || ''}`,
+            amount: r.total_charged
+        });
+    });
+
+    // Discounts & Split Payments in Regular Sales
+    receiptGroupsList.forEach(r => {
+        if (r.status === 'debt' || r.status === 'debt_collection') return;
+
+        const discMatch = (r.notes || '').match(/Discount:\s*KSh\s*([\d.]+)/i);
+        if (discMatch) {
+            const discAmt = parseFloat(discMatch[1]) || 0;
+            if (discAmt > 0) {
+                events.push({
+                    timestamp: r.timestamp,
+                    receipt_no: r.receipt_no,
+                    event_type: 'DISCOUNT_GIVEN',
+                    badge_text: '🏷️ DISCOUNT GIVEN',
+                    badge_class: 'bg-amber-100 text-amber-800 border-amber-300',
+                    cashier: r.cashier_name || r.cashier_username,
+                    details: `Discount authorized at checkout. Grand subtotal reduced by KSh ${discAmt.toFixed(2)}.`,
+                    amount: discAmt
+                });
+            }
+        }
+
+        const splitMatch = (r.notes || '').match(/Cash:\s*([\d.]+)\s*\|\s*M-Pesa:\s*([\d.]+)/i);
+        if (splitMatch) {
+            events.push({
+                timestamp: r.timestamp,
+                receipt_no: r.receipt_no,
+                event_type: 'SPLIT_TENDER',
+                badge_text: '🔀 SPLIT PAYMENT',
+                badge_class: 'bg-blue-100 text-blue-800 border-blue-300',
+                cashier: r.cashier_name || r.cashier_username,
+                details: `Split settlement: Cash KSh ${parseFloat(splitMatch[1]).toLocaleString(undefined, {minimumFractionDigits: 2})} + M-Pesa KSh ${parseFloat(splitMatch[2]).toLocaleString(undefined, {minimumFractionDigits: 2})}`,
+                amount: r.total_charged
+            });
+        }
+    });
+
+    financialAuditEvents = events.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+}
+
+// --------------------------------------------------------------------
+// UI Renderers: Sales Velocity & Peak Windows
+// --------------------------------------------------------------------
+function renderSalesPeaks() {
+    const container = document.getElementById('peak-windows-container');
+    if (!container) return;
+
+    const wList = [
+        { key: 'morning', ...salesPeakWindows.morning },
+        { key: 'afternoon', ...salesPeakWindows.afternoon },
+        { key: 'evening', ...salesPeakWindows.evening }
+    ];
+
+    container.innerHTML = wList.map(w => {
+        const topHtml = w.topProduct ? `
+            <div class="mt-2.5 pt-2.5 border-t border-slate-200/80">
+                <div class="text-[10px] font-black uppercase tracking-wider text-slate-400">🏆 Top Selling Product</div>
+                <div class="text-xs font-black text-slate-900 truncate mt-0.5">${escapeHtml(w.topProduct.name)}</div>
+                <div class="text-[11px] text-slate-500 font-medium">
+                    ${w.topProduct.units} units sold • <span class="font-bold text-orange-600">KSh ${w.topProduct.revenue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                </div>
+            </div>
+        ` : `
+            <div class="mt-2.5 pt-2.5 border-t border-slate-200/80 text-xs text-slate-400 font-medium italic">
+                No transactions recorded in this window
+            </div>
+        `;
+
+        return `
+            <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
+                <div>
+                    <div class="flex items-center justify-between mb-2">
+                        <div class="flex items-center gap-2">
+                            <span class="text-xl">${w.icon}</span>
+                            <div>
+                                <span class="text-xs font-black text-slate-900 block">${w.label}</span>
+                                <span class="text-[10px] text-slate-400 font-bold">${w.hours}</span>
+                            </div>
+                        </div>
+                        <span class="px-2 py-0.5 rounded-full text-[10px] font-black bg-slate-100 text-slate-700">
+                            ${w.tx_count} sales
+                        </span>
+                    </div>
+
+                    <div class="mt-2">
+                        <div class="text-lg font-black text-slate-900 tracking-tight">
+                            KSh ${w.revenue.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        </div>
+                        <div class="text-[10px] text-slate-500 font-medium">
+                            ${w.units.toLocaleString()} total units moved
+                        </div>
+                    </div>
+                </div>
+
+                ${topHtml}
+            </div>
+        `;
+    }).join('');
+}
+
+// --------------------------------------------------------------------
+// UI Renderers: Replenishment Budget Forecast
+// --------------------------------------------------------------------
+function renderBudgetForecast() {
+    const totalPill = document.getElementById('budget-forecast-total');
+    const tbody = document.getElementById('tbody-budget-forecast');
+    if (!tbody) return;
+
+    const grandBudget = replenishmentBudgetList.reduce((acc, i) => acc + i.recommended_budget, 0);
+
+    if (totalPill) {
+        totalPill.textContent = `Est. Budget: KSh ${grandBudget.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+    }
+
+    if (replenishmentBudgetList.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="5" class="py-6 text-center text-emerald-600 font-bold">✨ All inventory stock levels are healthy! No replenishment budget required.</td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = replenishmentBudgetList.map(item => {
+        const isUrgent = item.current_stock <= 2;
+        const stockBadge = isUrgent
+            ? `<span class="px-2 py-0.5 rounded-full text-xs font-black bg-red-100 text-red-700 border border-red-200">${item.current_stock} ${item.unit_of_measure || 'units'}</span>`
+            : `<span class="px-2 py-0.5 rounded-full text-xs font-black bg-amber-100 text-amber-800 border border-amber-200">${item.current_stock} ${item.unit_of_measure || 'units'}</span>`;
+
+        return `
+            <tr class="hover:bg-orange-50/20 transition border-b border-slate-100">
+                <td class="py-2.5 px-3">
+                    <span class="font-black text-slate-900 block">${escapeHtml(item.name)}</span>
+                    <span class="text-[10px] text-slate-400 font-bold uppercase">${escapeHtml(item.category || 'General')}</span>
+                </td>
+                <td class="py-2.5 px-3 text-center">
+                    ${stockBadge}
+                </td>
+                <td class="py-2.5 px-3 text-center font-bold text-slate-700">
+                    ${item.target_stock} ${item.unit_of_measure || 'units'} <span class="text-[10px] text-orange-600 font-black">(+${item.deficit_qty})</span>
+                </td>
+                <td class="py-2.5 px-3 text-right font-medium text-slate-600">
+                    KSh ${item.unit_buying_price.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </td>
+                <td class="py-2.5 px-3 text-right font-black text-orange-600 text-sm">
+                    KSh ${item.recommended_budget.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+// --------------------------------------------------------------------
+// UI Renderers: Financial Audit Trail Events
+// --------------------------------------------------------------------
+function renderAuditEvents() {
+    const tbody = document.getElementById('tbody-audit-events');
+    const badge = document.getElementById('badge-audit-count');
+    if (badge) badge.textContent = financialAuditEvents.length.toString();
+    if (!tbody) return;
+
+    if (financialAuditEvents.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" class="py-8 text-center text-slate-400 font-semibold">No high-impact financial audit events recorded during this period.</td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = financialAuditEvents.map(ev => {
+        const dateStr = formatDateTime(ev.timestamp);
+
+        return `
+            <tr class="hover:bg-slate-50 transition border-b border-slate-100">
+                <td class="py-2.5 px-3 text-slate-600 font-medium whitespace-nowrap text-xs">
+                    ${dateStr}
+                </td>
+                <td class="py-2.5 px-3 font-mono font-black text-xs text-slate-700 whitespace-nowrap">
+                    ${escapeHtml(ev.receipt_no)}
+                </td>
+                <td class="py-2.5 px-3 text-center whitespace-nowrap">
+                    <span class="px-2 py-0.5 rounded text-[10px] font-black border ${ev.badge_class}">
+                        ${ev.badge_text}
+                    </span>
+                </td>
+                <td class="py-2.5 px-3 text-xs font-bold text-slate-800 whitespace-nowrap">
+                    ${escapeHtml(ev.cashier)}
+                </td>
+                <td class="py-2.5 px-3 text-xs text-slate-600 font-medium">
+                    ${escapeHtml(ev.details)}
+                </td>
+                <td class="py-2.5 px-3 text-right font-black text-slate-900 text-xs whitespace-nowrap">
+                    KSh ${ev.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+// --------------------------------------------------------------------
+// Audit Trail & Replenishment Budget PDF Report Generator
+// --------------------------------------------------------------------
+function generateAuditTrailBudgetingPDF() {
+    if (!window.jspdf) {
+        return alert('PDF generation library is still loading. Please try again.');
+    }
+
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4'
+    });
+
+    const { label: periodLabel } = computeDateFilterBounds();
+    const storeName = (storeSettings.company_name || 'LITAJ HARDWARE').toUpperCase();
+    const phone = storeSettings.phone_contact || '+254 700 000 000';
+    const address = storeSettings.location_address || 'Main Hardware Yard, Commercial Street';
+    const printedAt = new Date().toLocaleString();
+    const auditorName = currentUser?.full_name || currentUser?.username || 'System Auditor';
+
+    // 1. Header Banner (Slate-900 with Amber / Orange Accent)
+    doc.setFillColor(15, 23, 42); // slate-900
+    doc.rect(0, 0, 210, 32, 'F');
+
+    doc.setFillColor(217, 119, 6); // amber-600 accent bar
+    doc.rect(0, 31, 210, 1.5, 'F');
+
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(16);
+    doc.text(storeName, 14, 13);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(203, 213, 225);
+    doc.text('PROCUREMENT BUDGETING FORECAST & SALES PEAKS AUDIT TRAIL', 14, 19);
+    doc.text(`Tel: ${phone} | Location: ${address}`, 14, 25);
+
+    // Right-aligned report metadata
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(255, 255, 255);
+    doc.text('FINANCIAL AUDIT REPORT', 196, 13, { align: 'right' });
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(226, 232, 240);
+    doc.text(`Period: ${periodLabel}`, 196, 18, { align: 'right' });
+    doc.text(`Audited By: ${auditorName}`, 196, 23, { align: 'right' });
+    doc.text(`Printed: ${printedAt}`, 196, 28, { align: 'right' });
+
+    let currentY = 40;
+
+    // 2. Section 1: Peak Sales Velocity Windows
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor(15, 23, 42);
+    doc.text('1. SALES VELOCITY & TIME WINDOW AUDIT (WHEN & WHAT SOLD MOST)', 14, currentY);
+
+    const windowsTableData = [
+        ['Morning Shift', '06:00 - 12:00', salesPeakWindows.morning.tx_count.toString(), salesPeakWindows.morning.units.toLocaleString(), `KSh ${salesPeakWindows.morning.revenue.toLocaleString(undefined, { minimumFractionDigits: 2 })}`, salesPeakWindows.morning.topProduct ? `${salesPeakWindows.morning.topProduct.name} (${salesPeakWindows.morning.topProduct.units} units - KSh ${salesPeakWindows.morning.topProduct.revenue.toLocaleString()})` : 'No Sales'],
+        ['Afternoon Shift', '12:00 - 17:00', salesPeakWindows.afternoon.tx_count.toString(), salesPeakWindows.afternoon.units.toLocaleString(), `KSh ${salesPeakWindows.afternoon.revenue.toLocaleString(undefined, { minimumFractionDigits: 2 })}`, salesPeakWindows.afternoon.topProduct ? `${salesPeakWindows.afternoon.topProduct.name} (${salesPeakWindows.afternoon.topProduct.units} units - KSh ${salesPeakWindows.afternoon.topProduct.revenue.toLocaleString()})` : 'No Sales'],
+        ['Evening Shift', '17:00 - 23:59', salesPeakWindows.evening.tx_count.toString(), salesPeakWindows.evening.units.toLocaleString(), `KSh ${salesPeakWindows.evening.revenue.toLocaleString(undefined, { minimumFractionDigits: 2 })}`, salesPeakWindows.evening.topProduct ? `${salesPeakWindows.evening.topProduct.name} (${salesPeakWindows.evening.topProduct.units} units - KSh ${salesPeakWindows.evening.topProduct.revenue.toLocaleString()})` : 'No Sales']
+    ];
+
+    doc.autoTable({
+        startY: currentY + 3,
+        head: [['Shift Window', 'Hours Slot', 'Transactions', 'Units Sold', 'Revenue (KSh)', 'Top Selling Hardware Product']],
+        body: windowsTableData,
+        theme: 'striped',
+        headStyles: { fillColor: [217, 119, 6], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8 },
+        styles: { fontSize: 8, cellPadding: 2.5 },
+        columnStyles: {
+            0: { cellWidth: 28, fontStyle: 'bold' },
+            1: { cellWidth: 26 },
+            2: { cellWidth: 22, halign: 'center' },
+            3: { cellWidth: 22, halign: 'center' },
+            4: { cellWidth: 30, halign: 'right', fontStyle: 'bold' },
+            5: { cellWidth: 54 }
+        },
+        margin: { left: 14, right: 14 }
+    });
+
+    // 3. Section 2: Recommended Replenishment Budget Forecast
+    currentY = doc.lastAutoTable.finalY + 9;
+    if (currentY > 230) {
+        doc.addPage();
+        currentY = 20;
+    }
+
+    const grandBudget = replenishmentBudgetList.reduce((acc, i) => acc + i.recommended_budget, 0);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor(15, 23, 42);
+    doc.text('2. REPLENISHMENT CAPITAL & WORKING BUDGET FORECAST', 14, currentY);
+
+    const budgetTableData = replenishmentBudgetList.map(item => [
+        item.name,
+        item.category || 'General',
+        `${item.current_stock} ${item.unit_of_measure || 'units'}`,
+        `${item.target_stock} ${item.unit_of_measure || 'units'}`,
+        `+${item.deficit_qty}`,
+        `KSh ${item.unit_buying_price.toLocaleString(undefined, { minimumFractionDigits: 2 })}`,
+        `KSh ${item.recommended_budget.toLocaleString(undefined, { minimumFractionDigits: 2 })}`
+    ]);
+
+    const budgetFootData = [[
+        `Total Recommended Replenishment Capital (${replenishmentBudgetList.length} Low-Stock Lines)`,
+        '',
+        '',
+        '',
+        '',
+        '',
+        `KSh ${grandBudget.toLocaleString(undefined, { minimumFractionDigits: 2 })}`
+    ]];
+
+    doc.autoTable({
+        startY: currentY + 3,
+        head: [['Depleted Item', 'Category', 'Current', 'Target', 'Order Qty', 'Unit Cost', 'Budget Req.']],
+        body: budgetTableData.length > 0 ? budgetTableData : [['All stock levels healthy! No replenishment procurement budget needed.', '', '', '', '', '', 'KSh 0.00']],
+        foot: budgetTableData.length > 0 ? budgetFootData : [],
+        theme: 'striped',
+        headStyles: { fillColor: [234, 88, 12], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 7.5 },
+        footStyles: { fillColor: [255, 247, 237], textColor: [194, 65, 12], fontStyle: 'bold', fontSize: 8 },
+        styles: { fontSize: 7.5, cellPadding: 2 },
+        columnStyles: {
+            0: { cellWidth: 50 },
+            1: { cellWidth: 30 },
+            2: { cellWidth: 20, halign: 'center' },
+            3: { cellWidth: 20, halign: 'center' },
+            4: { cellWidth: 16, halign: 'center', fontStyle: 'bold' },
+            5: { cellWidth: 22, halign: 'right' },
+            6: { cellWidth: 24, halign: 'right', fontStyle: 'bold' }
+        },
+        margin: { left: 14, right: 14 }
+    });
+
+    // 4. Section 3: Financial Audit Trail Events
+    currentY = doc.lastAutoTable.finalY + 9;
+    if (currentY > 230) {
+        doc.addPage();
+        currentY = 20;
+    }
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor(15, 23, 42);
+    doc.text('3. FINANCIAL & SECURITY AUDIT TRAIL LOG', 14, currentY);
+
+    const auditTableData = financialAuditEvents.map(ev => [
+        formatDateTime(ev.timestamp),
+        ev.receipt_no,
+        ev.badge_text,
+        ev.cashier,
+        ev.details,
+        `KSh ${ev.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`
+    ]);
+
+    doc.autoTable({
+        startY: currentY + 3,
+        head: [['Timestamp', 'Receipt / Ref', 'Event Type', 'Staff', 'Details & Audit Trail Notes', 'Amount (KSh)']],
+        body: auditTableData.length > 0 ? auditTableData : [['No high-impact financial audit events found in this period.', '', '', '', '', 'KSh 0.00']],
+        theme: 'striped',
+        headStyles: { fillColor: [51, 65, 85], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 7.5 },
+        styles: { fontSize: 7, cellPadding: 2 },
+        columnStyles: {
+            0: { cellWidth: 28 },
+            1: { cellWidth: 26, fontStyle: 'bold' },
+            2: { cellWidth: 26, halign: 'center' },
+            3: { cellWidth: 22 },
+            4: { cellWidth: 54 },
+            5: { cellWidth: 26, halign: 'right', fontStyle: 'bold' }
+        },
+        margin: { left: 14, right: 14 }
+    });
+
+    // 5. Dual Sign-off Certification Blocks
+    currentY = doc.lastAutoTable.finalY + 12;
+    if (currentY > 240) {
+        doc.addPage();
+        currentY = 25;
+    }
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(15, 23, 42);
+    doc.text('4. AUDIT CERTIFICATION & MANAGEMENT SIGN-OFF', 14, currentY);
+
+    currentY += 6;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(71, 85, 105);
+
+    // Box 1: Prepared by
+    doc.rect(14, currentY, 86, 26);
+    doc.setFont('helvetica', 'bold');
+    doc.text('PREPARED BY (Auditor / Shift Lead):', 17, currentY + 6);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Name: ${auditorName}`, 17, currentY + 12);
+    doc.text('Signature: __________________________', 17, currentY + 18);
+    doc.text(`Date: ${new Date().toLocaleDateString()}`, 17, currentY + 23);
+
+    // Box 2: Approved by
+    doc.rect(110, currentY, 86, 26);
+    doc.setFont('helvetica', 'bold');
+    doc.text('VERIFIED & APPROVED BY (Managing Director):', 113, currentY + 6);
+    doc.setFont('helvetica', 'normal');
+    doc.text('Name: _______________________________', 113, currentY + 12);
+    doc.text('Signature: __________________________', 113, currentY + 18);
+    doc.text('Date: _______________________________', 113, currentY + 23);
+
+    // 6. Page Numbers on all pages
+    const pageCount = doc.internal.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+        doc.setPage(i);
+        doc.setFontSize(7.5);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(148, 163, 184);
+        doc.text(
+            `Page ${i} of ${pageCount}  •  Litaj Hardware Enterprise POS  •  Confidential Budget & Audit Trail`,
+            105,
+            290,
+            { align: 'center' }
+        );
+    }
+
+    const filenameDate = selectedPeriod === 'today' 
+        ? getLocalDateString(new Date()) 
+        : `${selectedPeriod}_${getLocalDateString(new Date())}`;
+    doc.save(`Litaj_Hardware_Audit_Trail_Budgeting_${filenameDate}.pdf`);
+}
+
 

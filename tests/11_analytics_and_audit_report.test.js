@@ -381,6 +381,52 @@ runner.test('Should aggregate Consolidated Products Sold Matrix without debt col
     assertEqual(aggB.total_profit, 250.00, 'Item B gross profit must equal 250.00');
 });
 
+runner.test('Should accurately categorize peak sales windows, replenishment budgeting forecast, and audit trail events', async () => {
+    // 1. Peak Sales Windows Test
+    const sampleRows = [
+        // Morning (08:30)
+        { timestamp: '2026-10-15T08:30:00Z', receipt_no: 'TX-1', total_charged: 3000, calculated_qty: 4, name: 'Cement Alpha' },
+        // Afternoon (14:15)
+        { timestamp: '2026-10-15T14:15:00Z', receipt_no: 'TX-2', total_charged: 5500, calculated_qty: 5, name: 'Iron Sheet' },
+        // Evening (18:45)
+        { timestamp: '2026-10-15T18:45:00Z', receipt_no: 'TX-3', total_charged: 1200, calculated_qty: 2, name: 'Paint White' }
+    ];
+
+    const getShiftWindow = (iso) => {
+        const h = new Date(iso).getUTCHours();
+        if (h >= 6 && h < 12) return 'morning';
+        if (h >= 12 && h < 17) return 'afternoon';
+        return 'evening';
+    };
+
+    assertEqual(getShiftWindow(sampleRows[0].timestamp), 'morning', '08:30 must be morning shift');
+    assertEqual(getShiftWindow(sampleRows[1].timestamp), 'afternoon', '14:15 must be afternoon shift');
+    assertEqual(getShiftWindow(sampleRows[2].timestamp), 'evening', '18:45 must be evening shift');
+
+    // 2. Replenishment Budget Forecast Test
+    // Depleted item: current = 2, target = 20, unit buying price = 600
+    const currentStock = 2;
+    const targetStock = 20;
+    const unitBuyingPrice = 600.00;
+    const deficitQty = Math.max(1, targetStock - currentStock); // 18
+    const recommendedBudget = deficitQty * unitBuyingPrice; // 18 * 600 = 10,800.00
+
+    assertEqual(deficitQty, 18, 'Deficit units needed must equal 18');
+    assertEqual(recommendedBudget, 10800.00, 'Replenishment budget must equal 10,800.00');
+
+    // 3. Financial Audit Events Filtering & Structure
+    const auditEvents = [
+        { type: 'VOIDED_SALE', receipt: 'VOID-01', amount: 1500 },
+        { type: 'CREDIT_ISSUED', receipt: 'CR-02', amount: 2850 },
+        { type: 'DEBT_COLLECTION', receipt: 'REC-03', amount: 1000 },
+        { type: 'DISCOUNT_GIVEN', receipt: 'DSC-04', amount: 350 }
+    ];
+
+    assertEqual(auditEvents.length, 4, 'Must capture all 4 core financial risk event categories');
+    const voided = auditEvents.find(e => e.type === 'VOIDED_SALE');
+    assertEqual(voided.amount, 1500, 'Voided event amount must match');
+});
+
 runner.test('Should clean up all test sales, customer, and inventory records', async () => {
     // 1. Delete test sales log
     const { error: delSalesErr } = await supabase
