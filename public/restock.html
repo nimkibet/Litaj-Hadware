@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Restock & Suppliers | Litaj Hardware</title>
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#1e293b">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <link rel="stylesheet" href="/css/style.css">
+    <style>
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        body { animation: fadeIn 0.2s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(2px); } to { opacity: 1; transform: translateY(0); } }
+        .tab-btn.active {
+            border-bottom: 3px solid #ea580c;
+            color: #ea580c;
+            font-weight: 700;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen flex flex-col font-sans text-gray-800 overflow-x-hidden">
+
+    <!-- Top Navigation Bar -->
+    <nav class="bg-slate-900 text-white shadow-md flex-shrink-0 relative z-40 border-b border-slate-800">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-14">
+                <div class="flex items-center gap-3">
+                    <div class="w-8 h-8 rounded-lg bg-orange-600 flex items-center justify-center text-white font-black text-sm shadow">LH</div>
+                    <span class="text-base font-bold text-orange-400">Litaj Hardware</span>
+                </div>
+                <!-- Mobile menu button -->
+                <div class="flex md:hidden">
+                    <button id="mobile-menu-btn" class="text-gray-300 hover:text-white p-2">
+                        <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+                        </svg>
+                    </button>
+                </div>
+                <!-- Desktop menu -->
+                <div class="hidden md:flex space-x-1">
+                    <a href="/pos.html" class="px-3 py-1.5 text-xs font-bold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200">POS</a>
+                    <a href="/inventory.html" class="px-3 py-1.5 text-xs font-bold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200">Inventory</a>
+                    <a href="/restock.html" class="px-3 py-1.5 text-xs font-bold rounded-lg bg-orange-600 text-white shadow">Restock</a>
+                    <a href="/customers.html" class="px-3 py-1.5 text-xs font-bold rounded-lg admin-only hidden bg-slate-800 hover:bg-slate-700 text-slate-200">Customers</a>
+                    <a href="/users.html" class="px-3 py-1.5 text-xs font-bold rounded-lg admin-only hidden bg-slate-800 hover:bg-slate-700 text-slate-200">Users</a>
+                    <a href="/admin.html" class="px-3 py-1.5 text-xs font-bold rounded-lg admin-only hidden bg-slate-800 hover:bg-slate-700 text-slate-200">Admin</a>
+                    <a href="/analytics.html" class="px-3 py-1.5 text-xs font-bold rounded-lg admin-only hidden bg-slate-800 hover:bg-slate-700 text-slate-200">Analytics</a>
+                    <a href="/settings.html" class="px-3 py-1.5 text-xs font-bold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200">Settings</a>
+                    <a href="/profile.html" class="px-3 py-1.5 text-xs font-bold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200">Profile</a>
+                    <button id="btn-logout" class="px-3 py-1.5 text-xs font-bold rounded-lg bg-red-950/60 hover:bg-red-900 border border-red-800 text-red-300">Logout</button>
+                </div>
+            </div>
+        </div>
+        <!-- Mobile Menu -->
+        <div id="mobile-menu" class="hidden md:hidden bg-slate-800 border-t border-slate-700 px-4 py-3 space-y-2">
+            <a href="/pos.html" class="block px-3 py-2 text-sm font-semibold rounded bg-slate-700 text-white">POS</a>
+            <a href="/inventory.html" class="block px-3 py-2 text-sm font-semibold rounded bg-slate-700 text-white">Inventory</a>
+            <a href="/restock.html" class="block px-3 py-2 text-sm font-semibold rounded bg-orange-600 text-white">Restock</a>
+            <a href="/customers.html" class="block px-3 py-2 text-sm font-semibold rounded admin-only hidden bg-slate-700 text-white">Customers</a>
+            <a href="/users.html" class="block px-3 py-2 text-sm font-semibold rounded admin-only hidden bg-slate-700 text-white">Users</a>
+            <a href="/admin.html" class="block px-3 py-2 text-sm font-semibold rounded admin-only hidden bg-slate-700 text-white">Admin</a>
+            <a href="/analytics.html" class="block px-3 py-2 text-sm font-semibold rounded admin-only hidden bg-slate-700 text-white">Analytics</a>
+            <a href="/settings.html" class="block px-3 py-2 text-sm font-semibold rounded bg-slate-700 text-white">Settings</a>
+            <a href="/profile.html" class="block px-3 py-2 text-sm font-semibold rounded bg-slate-700 text-white">Profile</a>
+            <button id="btn-logout-mobile" class="w-full text-left px-3 py-2 text-sm font-bold rounded text-red-400 bg-slate-900">Logout</button>
+        </div>
+    </nav>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const btn = document.getElementById('mobile-menu-btn');
+            const menu = document.getElementById('mobile-menu');
+            if (btn && menu) btn.addEventListener('click', () => menu.classList.toggle('hidden'));
+            const logoutMobile = document.getElementById('btn-logout-mobile');
+            if (logoutMobile) logoutMobile.addEventListener('click', () => document.getElementById('btn-logout')?.click());
+        });
+    </script>
+
+    <!-- Main Workspace -->
+    <main class="flex-1 overflow-y-auto p-4 md:p-6 max-w-7xl mx-auto w-full space-y-4">
+        
+        <!-- Header & Action Overview -->
+        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+            <div>
+                <h1 class="text-2xl font-bold text-slate-800">Restock & Supplier Orders</h1>
+                <p class="text-xs text-slate-500 mt-0.5">Generate purchase orders, verify received deliveries with checkboxes, and track supplier accounts</p>
+            </div>
+            <div class="flex items-center gap-2 flex-wrap">
+                <button id="btn-quick-new-po" class="bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap shadow-md shadow-orange-600/30 transition flex items-center gap-1.5">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                    New Order
+                </button>
+                <button id="btn-add-supplier-top" class="bg-slate-800 hover:bg-slate-700 text-white px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap shadow-sm transition flex items-center gap-1.5">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"/></svg>
+                    + Add Supplier
+                </button>
+            </div>
+        </div>
+
+        <!-- Navigation Tabs -->
+        <div class="flex border-b border-slate-200 bg-white px-4 rounded-xl shadow-sm gap-4 overflow-x-auto">
+            <button id="tab-orders" class="tab-btn active py-3.5 px-3 text-sm font-bold text-slate-700 transition flex items-center gap-2">
+                <span>Orders & Verification</span>
+                <span id="badge-pending-count" class="bg-amber-100 text-amber-800 text-xs px-2 py-0.5 rounded-full font-extrabold hidden">0</span>
+            </button>
+            <button id="tab-generate" class="tab-btn py-3.5 px-3 text-sm font-semibold text-slate-500 hover:text-slate-800 transition flex items-center gap-1.5">
+                <span>Generate Order (PO)</span>
+            </button>
+            <button id="tab-suppliers" class="tab-btn py-3.5 px-3 text-sm font-semibold text-slate-500 hover:text-slate-800 transition flex items-center gap-1.5">
+                <span>Suppliers Directory</span>
+                <span id="badge-supplier-count" class="bg-slate-100 text-slate-600 text-xs px-2 py-0.5 rounded-full font-bold">0</span>
+            </button>
+            <button id="tab-logs" class="tab-btn py-3.5 px-3 text-sm font-semibold text-slate-500 hover:text-slate-800 transition flex items-center gap-1.5">
+                <span>Restock History Log</span>
+            </button>
+        </div>
+
+        <!-- VIEW 1: ORDERS & VERIFICATION -->
+        <section id="section-orders" class="space-y-4">
+            <!-- Filter Bar -->
+            <div class="flex flex-col sm:flex-row justify-between items-center gap-3 bg-white p-3.5 rounded-xl border border-slate-200">
+                <div class="flex items-center gap-2 w-full sm:w-auto">
+                    <input type="text" id="order-search" placeholder="Search PO #, supplier..." class="border border-slate-300 rounded-lg px-3 py-1.5 text-xs sm:text-sm w-full sm:w-64 focus:outline-none focus:ring-2 focus:ring-orange-500">
+                    <select id="order-status-filter" class="border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs sm:text-sm bg-white focus:outline-none focus:ring-2 focus:ring-orange-500">
+                        <option value="ALL">All Statuses</option>
+                        <option value="PENDING">Pending Delivery</option>
+                        <option value="PARTIAL">Partially Received</option>
+                        <option value="RECEIVED">Received (Pending Clear)</option>
+                        <option value="COMPLETED">Completed & Cleared</option>
+                    </select>
+                </div>
+                <div class="flex items-center gap-2 text-xs text-slate-500">
+                    <span>Showing <strong id="orders-count-label" class="text-slate-800">0</strong> orders</span>
+                </div>
+            </div>
+
+            <!-- Orders Table -->
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                <div class="w-full overflow-x-auto">
+                    <table class="w-full text-left text-sm">
+                        <thead class="bg-slate-50 text-slate-600 border-b border-slate-200 text-xs uppercase tracking-wider">
+                            <tr>
+                                <th class="py-3 px-4 font-bold">PO Number</th>
+                                <th class="py-3 px-4 font-bold">Supplier</th>
+                                <th class="py-3 px-4 font-bold">Date Ordered</th>
+                                <th class="py-3 px-4 text-right font-bold">Total Cost</th>
+                                <th class="py-3 px-4 text-right font-bold">Paid</th>
+                                <th class="py-3 px-4 text-center font-bold">Delivery Status</th>
+                                <th class="py-3 px-4 text-center font-bold">Payment Status</th>
+                                <th class="py-3 px-4 text-center font-bold">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="orders-tbody" class="divide-y divide-slate-100 text-xs sm:text-sm">
+                            <tr>
+                                <td colspan="8" class="text-center py-10 text-slate-400">Loading orders...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- VIEW 2: GENERATE NEW ORDER (PO GENERATOR) -->
+        <section id="section-generate" class="hidden space-y-4">
+            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-6">
+                <div class="border-b border-slate-100 pb-3 flex justify-between items-center">
+                    <div>
+                        <h2 class="text-lg font-bold text-slate-800">Generate Purchase Order / Invoice</h2>
+                        <p class="text-xs text-slate-500">Create an official order document for your supplier</p>
+                    </div>
+                    <span id="gen-po-number" class="text-xs font-mono font-bold bg-orange-50 text-orange-700 px-3 py-1.5 rounded-lg border border-orange-200">
+                        PO-2026-XXXX
+                    </span>
+                </div>
+
+                <!-- Order Header Details -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Select Supplier *</label>
+                        <div class="flex gap-1.5">
+                            <select id="gen-supplier-select" class="border border-slate-300 rounded-lg px-3 py-2 text-sm w-full bg-white focus:outline-none focus:ring-2 focus:ring-orange-500">
+                                <option value="">-- Choose Supplier --</option>
+                            </select>
+                            <button id="btn-modal-add-supplier" class="bg-slate-200 hover:bg-slate-300 text-slate-700 px-3 rounded-lg text-sm font-bold" title="Quick Add Supplier">+</button>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Expected Delivery Date</label>
+                        <input type="date" id="gen-delivery-date" class="border border-slate-300 rounded-lg px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-orange-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Payment Method / Terms</label>
+                        <select id="gen-payment-method" class="border border-slate-300 rounded-lg px-3 py-2 text-sm w-full bg-white focus:outline-none focus:ring-2 focus:ring-orange-500">
+                            <option value="CASH">Cash (Upon Delivery / From Shelf)</option>
+                            <option value="MPESA">M-PESA</option>
+                            <option value="BANK">Bank Transfer (EFT / RTGS)</option>
+                            <option value="CREDIT">Supplier Credit (Pay After Delivery)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Product Search & Add to PO Bar -->
+                <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+                    <h3 class="text-xs font-bold uppercase tracking-wider text-slate-500">Add Products to Order</h3>
+                    <div class="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
+                        <div class="sm:col-span-5 relative">
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">Search Product from Inventory</label>
+                            <input type="text" id="po-product-search" placeholder="Type product name or tier..." class="border border-slate-300 rounded-lg px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-orange-500">
+                            <!-- Dropdown Autocomplete Results -->
+                            <div id="po-search-results" class="hidden absolute left-0 right-0 top-full mt-1 bg-white border border-slate-300 rounded-xl shadow-xl max-h-56 overflow-y-auto z-30 divide-y divide-slate-100"></div>
+                        </div>
+                        <div class="sm:col-span-2">
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">Ordered Qty</label>
+                            <input type="number" id="po-add-qty" min="1" step="1" value="1" class="border border-slate-300 rounded-lg px-3 py-2 text-sm w-full text-center font-bold focus:outline-none focus:ring-2 focus:ring-orange-500">
+                        </div>
+                        <div class="sm:col-span-3">
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">Expected Unit Buying Price (KSh)</label>
+                            <input type="number" id="po-add-price" min="0" step="0.5" placeholder="0.00" class="border border-slate-300 rounded-lg px-3 py-2 text-sm w-full text-right font-bold focus:outline-none focus:ring-2 focus:ring-orange-500">
+                        </div>
+                        <div class="sm:col-span-2">
+                            <button id="btn-add-line-item" class="w-full bg-slate-900 hover:bg-slate-800 text-white py-2 rounded-lg text-sm font-bold shadow transition flex items-center justify-center gap-1">
+                                + Add Line
+                            </button>
+                        </div>
+                    </div>
+                    <div id="selected-product-hint" class="text-xs text-slate-500 min-h-[18px]"></div>
+                </div>
+
+                <!-- Order Line Items Table -->
+                <div class="border border-slate-200 rounded-xl overflow-hidden">
+                    <table class="w-full text-left text-sm">
+                        <thead class="bg-slate-100 text-slate-700 text-xs uppercase font-bold">
+                            <tr>
+                                <th class="py-2.5 px-3">#</th>
+                                <th class="py-2.5 px-3">Item Description</th>
+                                <th class="py-2.5 px-3 text-center">Ordered Qty</th>
+                                <th class="py-2.5 px-3 text-right">Expected Unit Cost</th>
+                                <th class="py-2.5 px-3 text-right">Line Total</th>
+                                <th class="py-2.5 px-3 text-center">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="po-items-tbody" class="divide-y divide-slate-100">
+                            <tr>
+                                <td colspan="6" class="text-center py-6 text-slate-400 text-xs">No items added to order yet. Search and add products above.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Order Summary & Initial Payment -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 items-start pt-2">
+                    <div class="space-y-3">
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 mb-1">Notes / Instructions / Delivery Site</label>
+                            <textarea id="gen-notes" rows="3" placeholder="e.g., Deliver to Main Warehouse, offloading by 2:00 PM..." class="border border-slate-300 rounded-lg px-3 py-2 text-xs sm:text-sm w-full focus:outline-none focus:ring-2 focus:ring-orange-500"></textarea>
+                        </div>
+                        <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-2">
+                            <div class="flex items-center justify-between">
+                                <label class="text-xs font-bold text-slate-700">Initial Deposit / Prepayment?</label>
+                                <input type="checkbox" id="chk-has-prepayment" class="w-4 h-4 text-orange-600 rounded">
+                            </div>
+                            <div id="prepayment-inputs" class="hidden grid grid-cols-2 gap-2 pt-1">
+                                <div>
+                                    <label class="block text-[10px] text-slate-500">Amount Paid Now (KSh)</label>
+                                    <input type="number" id="gen-amount-paid" min="0" step="1" value="0" class="border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs w-full font-bold text-right">
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] text-slate-500">Payment Reference Code</label>
+                                    <input type="text" id="gen-payment-ref" placeholder="e.g. M-PESA Code / Chq #" class="border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs w-full">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Totals Box -->
+                    <div class="bg-slate-900 text-white p-5 rounded-2xl space-y-3 shadow-md">
+                        <h4 class="text-xs uppercase font-extrabold text-orange-400 tracking-wider">Purchase Order Totals</h4>
+                        <div class="flex justify-between text-sm py-1 border-b border-slate-800">
+                            <span class="text-slate-400">Total Items:</span>
+                            <span id="summary-items-count" class="font-bold">0</span>
+                        </div>
+                        <div class="flex justify-between text-sm py-1 border-b border-slate-800">
+                            <span class="text-slate-400">Total Units:</span>
+                            <span id="summary-units-count" class="font-bold">0</span>
+                        </div>
+                        <div class="flex justify-between items-center text-lg font-black pt-1">
+                            <span class="text-white">Total Expected Cost:</span>
+                            <span id="summary-grand-total" class="text-orange-400">KSh 0.00</span>
+                        </div>
+                        <div class="pt-3 flex gap-2">
+                            <button id="btn-save-po" class="flex-1 bg-orange-600 hover:bg-orange-700 text-white py-2.5 rounded-xl font-bold text-sm shadow transition flex items-center justify-center gap-1.5">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                                Generate & Save Order
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- VIEW 3: SUPPLIERS DIRECTORY -->
+        <section id="section-suppliers" class="hidden space-y-4">
+            <div class="flex justify-between items-center bg-white p-3.5 rounded-xl border border-slate-200">
+                <input type="text" id="supplier-search" placeholder="Search suppliers..." class="border border-slate-300 rounded-lg px-3 py-1.5 text-xs sm:text-sm w-full sm:w-64 focus:outline-none focus:ring-2 focus:ring-orange-500">
+                <button id="btn-open-add-supplier-modal" class="bg-orange-600 hover:bg-orange-700 text-white px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-bold shadow transition">
+                    + New Supplier
+                </button>
+            </div>
+
+            <!-- Suppliers Table -->
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                <div class="w-full overflow-x-auto">
+                    <table class="w-full text-left text-sm">
+                        <thead class="bg-slate-50 text-slate-600 border-b border-slate-200 text-xs uppercase font-bold">
+                            <tr>
+                                <th class="py-3 px-4">Supplier Name</th>
+                                <th class="py-3 px-4">Contact Person</th>
+                                <th class="py-3 px-4">Phone</th>
+                                <th class="py-3 px-4">Location</th>
+                                <th class="py-3 px-4 text-right">Outstanding Balance</th>
+                                <th class="py-3 px-4 text-center">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="suppliers-tbody" class="divide-y divide-slate-100 text-xs sm:text-sm">
+                            <tr>
+                                <td colspan="6" class="text-center py-8 text-slate-400">Loading suppliers...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- VIEW 4: RESTOCK HISTORY LOG -->
+        <section id="section-logs" class="hidden space-y-4">
+            <div class="flex justify-between items-center bg-white p-3.5 rounded-xl border border-slate-200">
+                <input type="text" id="log-search" placeholder="Search product, PO #, verifier..." class="border border-slate-300 rounded-lg px-3 py-1.5 text-xs sm:text-sm w-full sm:w-64 focus:outline-none focus:ring-2 focus:ring-orange-500">
+                <button id="btn-export-restock-logs" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-bold shadow transition">
+                    Export Excel
+                </button>
+            </div>
+
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                <div class="w-full overflow-x-auto">
+                    <table class="w-full text-left text-sm">
+                        <thead class="bg-slate-50 text-slate-600 border-b border-slate-200 text-xs uppercase font-bold">
+                            <tr>
+                                <th class="py-3 px-4">Timestamp</th>
+                                <th class="py-3 px-4">PO Number</th>
+                                <th class="py-3 px-4">Supplier</th>
+                                <th class="py-3 px-4">Product Name</th>
+                                <th class="py-3 px-4 text-right">Qty Added</th>
+                                <th class="py-3 px-4 text-right">Actual Unit Cost</th>
+                                <th class="py-3 px-4 text-center">Stock: Prev &rarr; New</th>
+                                <th class="py-3 px-4 font-semibold">Verified By</th>
+                            </tr>
+                        </thead>
+                        <tbody id="logs-tbody" class="divide-y divide-slate-100 text-xs sm:text-sm">
+                            <tr>
+                                <td colspan="8" class="text-center py-8 text-slate-400">Loading restock history...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- VERIFICATION MODAL CONTAINER (Dynamic via JS) -->
+    <div id="modal-container"></div>
+
+    <script type="module" src="/js/restock.js"></script>
+
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js')
+                    .then(reg => {
+                        console.log('[SW] Registered, scope:', reg.scope);
+                        reg.update();
+                    })
+                    .catch(err => console.warn('[SW] Registration failed:', err));
+            });
+        }
+    </script>
+</body>
+</html>

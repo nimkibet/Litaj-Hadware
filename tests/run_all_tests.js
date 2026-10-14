@@ -19,7 +19,8 @@ const suites = [
     { file: '06_stock_sync_and_voiding.test.js', name: '06 - Live Inventory Stock Deduction & Void Restoration' },
     { file: '07_sales_ledger_and_kpis.test.js', name: '07 - Today\'s Sales Ledger & Register KPI Aggregations' },
     { file: '08_offline_queue_sync.test.js', name: '08 - Offline Sales Queue & Cloud Synchronization' },
-    { file: '09_store_settings_dynamic.test.js', name: '09 - Dynamic Store Configuration & Category Discovery' }
+    { file: '09_store_settings_dynamic.test.js', name: '09 - Dynamic Store Configuration & Category Discovery' },
+    { file: '10_restock_and_suppliers.test.js', name: '10 - Restock & Supplier Orders Workflow (Zero Trust)' }
 ];
 
 console.log('======================================================================');
