@@ -3,26 +3,32 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Customers | Litaj Hardware</title>
+    <title>Customers & Debt Management | Litaj Hardware</title>
     <link rel="manifest" href="/manifest.json">
-    <meta name="theme-color" content="#1e293b">
+    <meta name="theme-color" content="#0f172a">
     <style>
-        body { animation: fadeIn 0.2s ease-in-out; }
+        body { animation: fadeIn 0.15s ease-in-out; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(2px); } to { opacity: 1; transform: translateY(0); } }
-        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: #f1f5f9; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
         ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        .pb-safe { padding-bottom: max(1.5rem, env(safe-area-inset-bottom, 1.5rem)); }
     </style>
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- jsPDF & AutoTable for Client Statements & Thermal Receipts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
 </head>
-<body class="bg-gray-100 h-screen flex flex-col font-sans text-gray-800 overflow-hidden">
+<body class="bg-slate-100 min-h-screen flex flex-col font-sans text-slate-800">
 
-    <nav class="bg-slate-900 text-white shadow-md flex-shrink-0 relative z-50">
+    <!-- Top Navigation Bar -->
+    <nav class="bg-slate-900 text-white shadow-md flex-shrink-0 sticky top-0 z-40">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="flex items-center justify-between h-14">
-                <div class="flex items-center">
-                    <span class="text-xl font-bold text-orange-400">Litaj Hardware</span>
+                <div class="flex items-center gap-2">
+                    <span class="w-8 h-8 rounded-lg bg-orange-600 flex items-center justify-center font-black text-white text-base shadow">LH</span>
+                    <span class="text-lg font-black tracking-tight text-white">Litaj <span class="text-orange-500">Hardware</span></span>
                 </div>
                 <!-- Mobile menu button -->
                 <div class="flex md:hidden">
@@ -33,77 +39,286 @@
                     </button>
                 </div>
                 <!-- Desktop menu -->
-                <div class="hidden md:flex space-x-2">
-                    <a href="/pos.html" class="px-3 py-1.5 text-sm font-medium rounded bg-slate-700 hover:bg-slate-600">POS</a>
-                    <a href="/inventory.html" class="px-3 py-1.5 text-sm font-medium rounded bg-slate-700 hover:bg-slate-600">Inventory</a>
-                    <a href="/restock.html" class="px-3 py-1.5 text-sm font-medium rounded bg-slate-700 hover:bg-slate-600">Restock</a>
-                    <a href="/customers.html" class="px-3 py-1.5 text-sm font-medium rounded admin-only hidden bg-orange-600">Customers</a>
-                    <a href="/users.html" class="px-3 py-1.5 text-sm font-medium rounded admin-only hidden bg-slate-700 hover:bg-slate-600">Users</a>
-                    <a href="/admin.html" class="px-3 py-1.5 text-sm font-medium rounded admin-only hidden bg-slate-700 hover:bg-slate-600">Admin</a>
-                    <a href="/analytics.html" class="px-3 py-1.5 text-sm font-medium rounded admin-only hidden bg-slate-700 hover:bg-slate-600">Analytics</a>
-                    <a href="/profile.html" class="px-3 py-1.5 text-sm font-medium rounded bg-slate-700 hover:bg-slate-600">Profile</a><button id="btn-logout" class="px-3 py-1.5 text-sm font-medium rounded border border-slate-600 hover:bg-slate-800 text-red-400">Logout</button>
+                <div class="hidden md:flex items-center space-x-1.5">
+                    <a href="/pos.html" class="px-3 py-1.5 text-xs font-bold rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 transition">POS</a>
+                    <a href="/inventory.html" class="px-3 py-1.5 text-xs font-bold rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 transition">Inventory</a>
+                    <a href="/restock.html" class="px-3 py-1.5 text-xs font-bold rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 transition">Restock</a>
+                    <a href="/customers.html" class="px-3 py-1.5 text-xs font-bold rounded-xl admin-only hidden bg-orange-600 text-white shadow transition">Customers</a>
+                    <a href="/users.html" class="px-3 py-1.5 text-xs font-bold rounded-xl admin-only hidden bg-slate-800 hover:bg-slate-700 text-slate-200 transition">Users</a>
+                    <a href="/admin.html" class="px-3 py-1.5 text-xs font-bold rounded-xl admin-only hidden bg-slate-800 hover:bg-slate-700 text-slate-200 transition">Admin</a>
+                    <a href="/analytics.html" class="px-3 py-1.5 text-xs font-bold rounded-xl admin-only hidden bg-slate-800 hover:bg-slate-700 text-slate-200 transition">Analytics</a>
+                    <a href="/profile.html" class="px-3 py-1.5 text-xs font-bold rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 transition">Profile</a>
+                    <button id="btn-logout" class="px-3 py-1.5 text-xs font-bold rounded-xl border border-slate-700 hover:bg-red-950/40 text-red-400 transition ml-2">Logout</button>
                 </div>
             </div>
         </div>
         <!-- Mobile Menu (hidden by default) -->
-        <div id="mobile-menu" class="hidden md:hidden bg-slate-800 absolute w-full left-0 top-14 shadow-xl border-t border-slate-700">
-            <div class="px-4 pt-2 pb-4 space-y-2 flex flex-col">
-                <a href="/pos.html" class="block px-3 py-2 rounded text-base font-medium bg-slate-700 hover:bg-slate-600">POS</a>
-                <a href="/inventory.html" class="block px-3 py-2 rounded text-base font-medium bg-slate-700 hover:bg-slate-600">Inventory</a>
-                <a href="/restock.html" class="block px-3 py-2 rounded text-base font-medium bg-slate-700 hover:bg-slate-600">Restock</a>
-                <a href="/customers.html" class="block px-3 py-2 rounded text-base font-medium admin-only hidden bg-orange-600">Customers</a>
-                <a href="/users.html" class="block px-3 py-2 rounded text-base font-medium admin-only hidden bg-slate-700 hover:bg-slate-600">Users</a>
-                <a href="/admin.html" class="block px-3 py-2 rounded text-base font-medium admin-only hidden bg-slate-700 hover:bg-slate-600">Admin</a>
-                <a href="/analytics.html" class="block px-3 py-2 rounded text-base font-medium admin-only hidden bg-slate-700 hover:bg-slate-600">Analytics</a>
-                <a href="/profile.html" class="block px-3 py-2 rounded text-base font-medium bg-slate-700 hover:bg-slate-600">Profile</a><button id="btn-logout-mobile" class="w-full text-left block px-3 py-2 rounded text-base font-medium text-red-400 hover:bg-slate-700">Logout</button>
-            </div>
+        <div id="mobile-menu" class="hidden md:hidden bg-slate-800 border-t border-slate-700 px-4 pt-3 pb-4 space-y-2">
+            <a href="/pos.html" class="block px-3 py-2 rounded-xl text-sm font-bold bg-slate-700 text-white">POS Register</a>
+            <a href="/inventory.html" class="block px-3 py-2 rounded-xl text-sm font-bold bg-slate-700 text-white">Inventory</a>
+            <a href="/restock.html" class="block px-3 py-2 rounded-xl text-sm font-bold bg-slate-700 text-white">Restock & Suppliers</a>
+            <a href="/customers.html" class="block px-3 py-2 rounded-xl text-sm font-bold bg-orange-600 text-white admin-only hidden">Customers & Debts</a>
+            <a href="/users.html" class="block px-3 py-2 rounded-xl text-sm font-bold bg-slate-700 text-white admin-only hidden">Users</a>
+            <a href="/admin.html" class="block px-3 py-2 rounded-xl text-sm font-bold bg-slate-700 text-white admin-only hidden">Admin Dashboard</a>
+            <a href="/analytics.html" class="block px-3 py-2 rounded-xl text-sm font-bold bg-slate-700 text-white admin-only hidden">Analytics</a>
+            <a href="/profile.html" class="block px-3 py-2 rounded-xl text-sm font-bold bg-slate-700 text-white">Profile</a>
+            <button id="btn-logout-mobile" class="w-full text-left block px-3 py-2 rounded-xl text-sm font-bold text-red-400 hover:bg-slate-700">Logout</button>
         </div>
     </nav>
+
+    <!-- Main Content Container with Samsung A03 Navigation Bar Clearance -->
+    <main class="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6 pb-24 sm:pb-12 space-y-6">
+
+        <!-- Page Header & Action Bar -->
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+                <h1 class="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+                    <span>👥</span> Customers & Debt Management
+                </h1>
+                <p class="text-xs sm:text-sm text-slate-500 font-medium mt-1">
+                    Track client accounts, monitor itemized debt breakdowns, record repayments, and generate PDF statements.
+                </p>
+            </div>
+            <div class="flex items-center gap-2">
+                <button id="btn-add-cust" class="h-11 px-5 bg-orange-600 hover:bg-orange-500 active:bg-orange-700 text-white font-bold rounded-xl text-xs sm:text-sm transition flex items-center gap-2 shadow-sm shadow-orange-600/30">
+                    <span>+</span> Register New Customer
+                </button>
+            </div>
+        </div>
+
+        <!-- 4 Top KPI Cards -->
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+            <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
+                <div class="text-xs font-bold text-slate-500 uppercase tracking-wider">Registered Clients</div>
+                <div id="kpi-total-cust" class="text-2xl sm:text-3xl font-black text-slate-900 mt-1">0</div>
+                <div class="text-[11px] text-slate-400 mt-1">Active customer profiles</div>
+            </div>
+            <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
+                <div class="text-xs font-bold text-red-600 uppercase tracking-wider">Store Debt Due</div>
+                <div id="kpi-total-debt" class="text-2xl sm:text-3xl font-black text-red-600 mt-1">KSh 0.00</div>
+                <div class="text-[11px] text-slate-400 mt-1">Total outstanding credit balance</div>
+            </div>
+            <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
+                <div class="text-xs font-bold text-amber-700 uppercase tracking-wider">Accounts in Debt</div>
+                <div id="kpi-debtors-count" class="text-2xl sm:text-3xl font-black text-amber-700 mt-1">0</div>
+                <div class="text-[11px] text-slate-400 mt-1">Clients with pending balances</div>
+            </div>
+            <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
+                <div class="text-xs font-bold text-emerald-700 uppercase tracking-wider">Customer Purchases</div>
+                <div id="kpi-total-purchased" class="text-2xl sm:text-3xl font-black text-emerald-700 mt-1">KSh 0.00</div>
+                <div class="text-[11px] text-slate-400 mt-1">Lifetime attached purchases</div>
+            </div>
+        </div>
+
+        <!-- Search, Filter & Sort Toolbar -->
+        <div class="bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+            <div class="relative flex-1">
+                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                </div>
+                <input type="text" id="cust-search" placeholder="Search by customer name, phone number..." class="w-full pl-9 pr-8 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:bg-white transition">
+                <button id="btn-clear-search" class="hidden absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 text-sm font-bold">&times;</button>
+            </div>
+            <div class="flex items-center gap-2 flex-wrap">
+                <select id="cust-filter-status" class="py-2.5 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-orange-500">
+                    <option value="all">All Accounts</option>
+                    <option value="debt">With Outstanding Debt</option>
+                    <option value="cleared">Cleared (No Debt)</option>
+                </select>
+                <select id="cust-sort" class="py-2.5 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-orange-500">
+                    <option value="name-asc">Name (A-Z)</option>
+                    <option value="debt-high">Highest Debt First</option>
+                    <option value="debt-low">Lowest Debt First</option>
+                    <option value="purchases-high">Highest Total Purchases</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Customers Table Card -->
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+            <div class="w-full overflow-x-auto">
+                <table class="w-full text-left text-sm">
+                    <thead class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold text-xs uppercase tracking-wider">
+                        <tr>
+                            <th class="py-3.5 px-4">Customer Details</th>
+                            <th class="py-3.5 px-4">Contact Phone</th>
+                            <th class="py-3.5 px-4 text-right">Total Purchases</th>
+                            <th class="py-3.5 px-4 text-right">Outstanding Debt</th>
+                            <th class="py-3.5 px-4 text-center">Actions & Statements</th>
+                        </tr>
+                    </thead>
+                    <tbody id="cust-tbody" class="divide-y divide-slate-100 font-medium">
+                        <tr>
+                            <td colspan="5" class="py-12 text-center text-slate-400 font-semibold text-sm">
+                                Loading customers data...
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <!-- ==================================================================== -->
+    <!-- CUSTOMER ACTIVITY, STATEMENT & DEBT BREAKDOWN MODAL                   -->
+    <!-- ==================================================================== -->
+    <div id="modal-cust-activity" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm hidden p-2 sm:p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden border border-slate-200">
+            
+            <!-- Modal Header -->
+            <div class="px-5 py-4 bg-slate-900 text-white flex justify-between items-center flex-shrink-0">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-orange-600 text-white font-black text-lg flex items-center justify-center shadow">
+                        👤
+                    </div>
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <h3 id="stmt-cust-name" class="text-base sm:text-lg font-black text-white">Customer Statement</h3>
+                            <span id="stmt-debt-badge" class="px-2 py-0.5 rounded-md text-[11px] font-bold bg-red-100 text-red-700">Debt: KSh 0.00</span>
+                        </div>
+                        <p id="stmt-cust-phone" class="text-xs text-slate-400 font-mono">Tel: -</p>
+                    </div>
+                </div>
+                <button id="btn-close-stmt-modal" class="w-9 h-9 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xl flex items-center justify-center transition">&times;</button>
+            </div>
+
+            <!-- Filter Toolbar inside Modal -->
+            <div class="p-3.5 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 flex-shrink-0">
+                <!-- Date Presets -->
+                <div class="flex items-center gap-1.5 flex-wrap">
+                    <button class="stmt-preset-btn active px-3 py-1.5 rounded-lg text-xs font-bold border border-orange-600 bg-orange-50 text-orange-700 transition" data-range="all">All Time</button>
+                    <button class="stmt-preset-btn px-3 py-1.5 rounded-lg text-xs font-bold border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 transition" data-range="today">Today</button>
+                    <button class="stmt-preset-btn px-3 py-1.5 rounded-lg text-xs font-bold border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 transition" data-range="week">Last 7 Days</button>
+                    <button class="stmt-preset-btn px-3 py-1.5 rounded-lg text-xs font-bold border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 transition" data-range="month">This Month</button>
+                </div>
+                <!-- Custom Date Range -->
+                <div class="flex items-center gap-1.5 flex-wrap">
+                    <input type="date" id="stmt-from-date" class="px-2.5 py-1 text-xs border border-slate-200 rounded-lg font-semibold bg-white text-slate-700">
+                    <span class="text-xs text-slate-400 font-bold">to</span>
+                    <input type="date" id="stmt-to-date" class="px-2.5 py-1 text-xs border border-slate-200 rounded-lg font-semibold bg-white text-slate-700">
+                    <button id="btn-stmt-apply-dates" class="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-xs font-bold transition">Apply</button>
+                </div>
+                <!-- Action Buttons: Download PDF & Quick Pay -->
+                <div class="flex items-center gap-2">
+                    <button id="btn-download-cust-pdf" class="px-3.5 py-1.5 bg-orange-600 hover:bg-orange-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-sm">
+                        <span>📄</span> Download Statement (PDF)
+                    </button>
+                    <button id="btn-modal-repay-debt" class="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-sm">
+                        <span>💰</span> Record Repayment
+                    </button>
+                </div>
+            </div>
+
+            <!-- Customer Financial Metric Ribbon -->
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 p-3.5 bg-white border-b border-slate-200 flex-shrink-0 text-center">
+                <div class="p-2.5 bg-slate-50 rounded-xl border border-slate-100">
+                    <div class="text-[10px] font-bold text-slate-400 uppercase">Period Purchases</div>
+                    <div id="stmt-kpi-purchases" class="text-base sm:text-lg font-black text-slate-900 mt-0.5">KSh 0.00</div>
+                </div>
+                <div class="p-2.5 bg-slate-50 rounded-xl border border-slate-100">
+                    <div class="text-[10px] font-bold text-red-600 uppercase">Debts Incurred</div>
+                    <div id="stmt-kpi-debts" class="text-base sm:text-lg font-black text-red-600 mt-0.5">KSh 0.00</div>
+                </div>
+                <div class="p-2.5 bg-slate-50 rounded-xl border border-slate-100">
+                    <div class="text-[10px] font-bold text-emerald-600 uppercase">Debt Repayments</div>
+                    <div id="stmt-kpi-repaid" class="text-base sm:text-lg font-black text-emerald-600 mt-0.5">KSh 0.00</div>
+                </div>
+                <div class="p-2.5 bg-red-50 rounded-xl border border-red-200">
+                    <div class="text-[10px] font-bold text-red-700 uppercase">Outstanding Balance</div>
+                    <div id="stmt-kpi-current-balance" class="text-base sm:text-lg font-black text-red-700 mt-0.5">KSh 0.00</div>
+                </div>
+            </div>
+
+            <!-- Transaction Audit Ledger List (Scrollable) -->
+            <div class="flex-1 overflow-y-auto p-4 space-y-2.5 bg-slate-50">
+                <div class="flex items-center justify-between pb-1">
+                    <div class="text-xs font-bold text-slate-600 uppercase tracking-wider">Itemized Transactions & Debt Ledger</div>
+                    <div id="stmt-trans-count" class="text-xs font-semibold text-slate-400">0 records found</div>
+                </div>
+                <div id="stmt-transactions-container" class="space-y-2.5">
+                    <!-- Populated dynamically via JS -->
+                </div>
+            </div>
+
+            <!-- Modal Footer -->
+            <div class="px-5 py-3 bg-white border-t border-slate-200 flex justify-between items-center flex-shrink-0">
+                <div class="text-xs text-slate-400 font-medium">Litaj Hardware POS • Zero-Trust Account Statements</div>
+                <button id="btn-close-stmt-bottom" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 active:bg-slate-300 text-slate-700 font-bold rounded-xl text-xs transition">
+                    Close
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================================================================== -->
+    <!-- QUICK DEBT REPAYMENT MODAL                                           -->
+    <!-- ==================================================================== -->
+    <div id="modal-repay-debt" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm hidden p-3">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-slate-200">
+            <div class="px-5 py-4 bg-slate-900 text-white flex justify-between items-center">
+                <h3 class="text-base sm:text-lg font-bold flex items-center gap-2">
+                    <span>💰</span> Record Debt Repayment
+                </h3>
+                <button id="btn-close-repay-modal" class="text-slate-400 hover:text-white font-bold text-xl">&times;</button>
+            </div>
+            <div class="p-5 space-y-4">
+                <div class="p-3.5 bg-red-50 border border-red-200 rounded-xl text-center">
+                    <div class="text-xs font-bold text-slate-600">Current Outstanding Debt for <span id="repay-cust-name-label" class="font-bold text-slate-900">-</span></div>
+                    <div id="repay-cust-bal-label" class="text-2xl font-black text-red-600 mt-1">KSh 0.00</div>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Amount Paid (KSh)</label>
+                    <input type="number" id="repay-amount-input" step="any" min="1" class="w-full border-2 border-slate-200 rounded-xl px-3.5 py-2.5 text-base font-black text-slate-900 focus:outline-none focus:border-emerald-500" placeholder="e.g. 5000">
+                    <div class="flex gap-2 mt-1.5">
+                        <button id="btn-repay-full" class="text-xs font-bold text-emerald-700 hover:underline">Pay Full Balance</button>
+                        <span class="text-slate-300">•</span>
+                        <button id="btn-repay-half" class="text-xs font-bold text-slate-600 hover:underline">Pay 50%</button>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Payment Method</label>
+                    <select id="repay-method-select" class="w-full border-2 border-slate-200 rounded-xl px-3.5 py-2.5 text-sm font-bold text-slate-800 focus:outline-none focus:border-emerald-500">
+                        <option value="Cash">Cash Drawer</option>
+                        <option value="M-Pesa">M-Pesa Paybill / Till</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 uppercase mb-1">Payment Reference / Notes (Optional)</label>
+                    <input type="text" id="repay-notes-input" class="w-full border-2 border-slate-200 rounded-xl px-3.5 py-2 text-sm font-semibold text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500" placeholder="e.g. MPESA Ref code or cashier remarks">
+                </div>
+            </div>
+            <div class="px-5 py-3.5 bg-slate-50 border-t border-slate-100 flex justify-end gap-2">
+                <button id="btn-cancel-repay" class="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl text-xs sm:text-sm transition">Cancel</button>
+                <button id="btn-submit-repayment" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-black rounded-xl text-xs sm:text-sm transition flex items-center gap-1.5 shadow-md shadow-emerald-600/30">
+                    ✓ Confirm Payment
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Client Logic Modules -->
+    <script type="module" src="/js/customers.js"></script>
+
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             const btn = document.getElementById('mobile-menu-btn');
             const menu = document.getElementById('mobile-menu');
-            if(btn && menu) {
-                btn.addEventListener('click', () => {
-                    menu.classList.toggle('hidden');
-                });
+            if (btn && menu) {
+                btn.addEventListener('click', () => menu.classList.toggle('hidden'));
             }
             const logoutMobile = document.getElementById('btn-logout-mobile');
-            if(logoutMobile) {
+            if (logoutMobile) {
                 logoutMobile.addEventListener('click', () => {
                     document.getElementById('btn-logout')?.click();
                 });
             }
         });
-    </script>
 
-    <main class="flex-1 overflow-y-auto p-6 max-w-7xl mx-auto w-full">
-        <div class="flex justify-between items-center mb-6">
-            <h1 class="text-2xl font-bold text-slate-800">Customers</h1>
-            <button id="btn-add-cust" class="bg-orange-600 text-white px-4 py-2 rounded font-bold hover:bg-orange-700">+ Add Customer</button>
-        </div>
-        <div class="bg-white rounded-xl shadow border border-slate-200 overflow-hidden">
-            <div class="w-full overflow-x-auto"><table class="w-full text-left text-sm">
-                <thead class="bg-slate-50 text-slate-600">
-                    <tr><th class="py-3 px-4 border-b">Name</th><th class="py-3 px-4 border-b">Phone</th><th class="py-3 px-4 border-b text-right">Debt (Ksh)</th><th class="py-3 px-4 border-b text-center">Actions</th></tr>
-                </thead>
-                <tbody id="cust-tbody" class="divide-y divide-slate-100"></tbody>
-            </table></div>
-        </div>
-    </main>
-    <script type="module" src="/js/customers.js"></script>
-
-    <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('/sw.js')
-                    .then(reg => {
-                        console.log('[SW] Registered, scope:', reg.scope);
-                        // Check for updates when the page loads
-                        reg.update();
-                    })
-                    .catch(err => console.warn('[SW] Registration failed:', err));
+                navigator.serviceWorker.register('/sw.js').then(reg => reg.update()).catch(err => console.warn(err));
             });
         }
     </script>
-</body></html>
+</body>
+</html>

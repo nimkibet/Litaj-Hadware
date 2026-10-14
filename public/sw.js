@@ -1,4 +1,4 @@
-const CACHE_NAME = 'litaj-hardware-v8-pos-cust-fix';
+const CACHE_NAME = 'litaj-hardware-v9-customers-users-activity';
 
 // Only pre-cache the offline fallback page at install time.
 // Everything else gets cached as the user visits it (cache-on-navigate).
