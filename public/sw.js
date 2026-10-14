@@ -1,4 +1,4 @@
-const CACHE_NAME = 'litaj-hardware-v10-uniform-top-nav';
+const CACHE_NAME = 'litaj-hardware-v11-mobile-nav-tiles-and-scroll';
 
 // Only pre-cache the offline fallback page at install time.
 // Everything else gets cached as the user visits it (cache-on-navigate).

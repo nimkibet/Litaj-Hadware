@@ -30,20 +30,47 @@ export function requireAuth() {
     setTimeout(unhide, 50); // Fallback for dynamic renders
     setTimeout(unhide, 200); // Fallback for dynamic renders
     
-    // Universal mobile navigation menu toggle
+    // Universal mobile navigation menu & collapsible tile handler
     const setupNavEvents = () => {
         const btn = document.getElementById('mobile-menu-btn');
         const menu = document.getElementById('mobile-menu');
+        const chevron = document.getElementById('mobile-menu-chevron');
+        
         if (btn && menu && !btn.dataset.bound) {
             btn.dataset.bound = 'true';
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
+                const willOpen = menu.classList.contains('hidden');
                 menu.classList.toggle('hidden');
+                if (chevron) {
+                    if (willOpen) chevron.classList.add('rotate-180');
+                    else chevron.classList.remove('rotate-180');
+                }
+                if (willOpen) unhide();
             });
             document.addEventListener('click', (e) => {
                 if (!menu.contains(e.target) && !btn.contains(e.target) && !menu.classList.contains('hidden')) {
                     menu.classList.add('hidden');
+                    if (chevron) chevron.classList.remove('rotate-180');
                 }
+            });
+        }
+
+        // Collapsible tile: Other Menus toggle
+        const toggleOtherBtn = document.getElementById('toggle-other-menus-btn');
+        const otherMenusPanel = document.getElementById('collapsible-other-menus');
+        const chevronOther = document.getElementById('chevron-other-menus');
+        if (toggleOtherBtn && otherMenusPanel && !toggleOtherBtn.dataset.bound) {
+            toggleOtherBtn.dataset.bound = 'true';
+            toggleOtherBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const willOpen = otherMenusPanel.classList.contains('hidden');
+                otherMenusPanel.classList.toggle('hidden');
+                if (chevronOther) {
+                    if (willOpen) chevronOther.classList.add('rotate-180');
+                    else chevronOther.classList.remove('rotate-180');
+                }
+                if (willOpen) unhide();
             });
         }
     };

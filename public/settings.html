@@ -21,25 +21,31 @@
 <body class="bg-gray-100 min-h-screen flex flex-col font-sans text-gray-800">
 
     <!-- Top Navigation Bar -->
-    <nav class="bg-slate-900 text-white shadow-md flex-shrink-0 sticky top-0 z-40 border-b border-slate-800">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <nav class="bg-slate-900 text-white shadow-md flex-shrink-0 sticky top-0 z-40 border-b border-slate-800 pt-safe">
+        <div class="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
             <div class="flex items-center justify-between h-14">
                 <!-- Brand Logo & Name -->
-                <a href="/pos.html" class="flex items-center gap-2.5 hover:opacity-90 transition flex-shrink-0">
-                    <span class="w-8 h-8 rounded-lg bg-orange-600 flex items-center justify-center font-black text-white text-sm shadow">LH</span>
-                    <span class="text-base sm:text-lg font-black tracking-tight text-white leading-none">Litaj <span class="text-orange-500">Hardware</span></span>
-                </a>
+                <div class="flex items-center gap-2 sm:gap-2.5">
+                    <a href="/pos.html" class="flex items-center gap-2 sm:gap-2.5 hover:opacity-90 transition flex-shrink-0">
+                        <span class="w-8 h-8 rounded-lg bg-orange-600 flex items-center justify-center font-black text-white text-sm shadow">LH</span>
+                        <span class="text-base sm:text-lg font-black tracking-tight text-white leading-none">Litaj <span class="text-orange-500">Hardware</span></span>
+                    </a>
+                </div>
 
-                <!-- Mobile menu button -->
+                <!-- Mobile View Controls (Current Page Pill + Collapsible Menu Trigger) -->
                 <div class="flex lg:hidden items-center gap-2">
-                    <button id="mobile-menu-btn" type="button" aria-label="Toggle navigation menu" class="text-slate-300 hover:text-white p-2 rounded-xl bg-slate-800 border border-slate-700 focus:outline-none transition">
-                        <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+                    <span class="px-2.5 py-1 text-[11px] font-bold rounded-lg bg-slate-800 border border-slate-700 text-orange-400 truncate max-w-[130px]">
+                        Store Settings
+                    </span>
+                    <button id="mobile-menu-btn" type="button" aria-label="Toggle navigation menu" class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 active:bg-slate-950 border border-slate-700 text-slate-200 text-xs font-bold transition focus:outline-none">
+                        <span>Menu</span>
+                        <svg id="mobile-menu-chevron" class="h-4 w-4 transition-transform duration-200 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
                         </svg>
                     </button>
                 </div>
 
-                <!-- Desktop Menu -->
+                <!-- Desktop Menu (1024px+) -->
                 <div class="hidden lg:flex items-center space-x-1 sm:space-x-1.5">
                     <a href="/pos.html" class="px-2.5 sm:px-3 py-1.5 text-xs font-bold rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 transition">POS</a>
                     <a href="/inventory.html" class="px-2.5 sm:px-3 py-1.5 text-xs font-bold rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 transition">Inventory</a>
@@ -55,22 +61,104 @@
             </div>
         </div>
 
-        <!-- Mobile Menu Dropdown -->
-        <div id="mobile-menu" class="hidden lg:hidden absolute w-full left-0 top-14 bg-slate-800 border-t border-slate-700 px-4 pt-3 pb-4 space-y-1.5 shadow-2xl z-50">
-            <a href="/pos.html" class="block px-3 py-2 rounded-xl text-sm font-bold bg-slate-700 hover:bg-slate-600 text-slate-200">POS Register</a>
-            <a href="/inventory.html" class="block px-3 py-2 rounded-xl text-sm font-bold bg-slate-700 hover:bg-slate-600 text-slate-200">Inventory</a>
-            <a href="/restock.html" class="block px-3 py-2 rounded-xl text-sm font-bold bg-slate-700 hover:bg-slate-600 text-slate-200">Restock & Orders</a>
-            <a href="/customers.html" class="block px-3 py-2 rounded-xl text-sm font-bold bg-slate-700 hover:bg-slate-600 text-slate-200 admin-only hidden">Customers & Debts</a>
-            <a href="/users.html" class="block px-3 py-2 rounded-xl text-sm font-bold bg-slate-700 hover:bg-slate-600 text-slate-200 admin-only hidden">Users & Staff</a>
-            <a href="/admin.html" class="block px-3 py-2 rounded-xl text-sm font-bold bg-slate-700 hover:bg-slate-600 text-slate-200 admin-only hidden">Admin Dashboard</a>
-            <a href="/analytics.html" class="block px-3 py-2 rounded-xl text-sm font-bold bg-slate-700 hover:bg-slate-600 text-slate-200 admin-only hidden">Analytics & KPIs</a>
-            <a href="/settings.html" class="block px-3 py-2 rounded-xl text-sm font-bold bg-orange-600 text-white shadow admin-only hidden">Store Settings</a>
-            <a href="/profile.html" class="block px-3 py-2 rounded-xl text-sm font-bold bg-slate-700 hover:bg-slate-600 text-slate-200">My Profile</a>
-            <button id="btn-logout-mobile" class="w-full text-left block px-3 py-2 rounded-xl text-sm font-bold text-red-400 hover:bg-red-950/40 border border-slate-700 transition">Logout</button>
+        <!-- Mobile Menu (Collapsible Tiles & Independently Scrollable Container) -->
+        <div id="mobile-menu" class="hidden lg:hidden fixed inset-x-0 top-14 bg-slate-900/98 backdrop-blur-md border-b border-slate-800 shadow-2xl z-50 overflow-y-auto overscroll-contain max-h-[calc(100dvh-3.5rem)] p-3 sm:p-4 space-y-3">
+            
+            <!-- Quick Core Operations Tiles (Grid of 3) -->
+            <div>
+                <div class="text-[10px] font-black uppercase tracking-wider text-slate-400 px-1 mb-1.5 flex items-center justify-between">
+                    <span>⚡ Daily Register Operations</span>
+                    <span class="text-slate-500">Quick Access</span>
+                </div>
+                <div class="grid grid-cols-3 gap-2">
+                    <a href="/pos.html" class="flex flex-col items-center justify-center p-2.5 rounded-xl border transition bg-slate-800/90 hover:bg-slate-800 text-slate-200 border-slate-700/80">
+                        <span class="text-xl mb-1">🛒</span>
+                        <span class="text-xs font-bold leading-tight">POS</span>
+                    </a>
+                    <a href="/inventory.html" class="flex flex-col items-center justify-center p-2.5 rounded-xl border transition bg-slate-800/90 hover:bg-slate-800 text-slate-200 border-slate-700/80">
+                        <span class="text-xl mb-1">📦</span>
+                        <span class="text-xs font-bold leading-tight">Inventory</span>
+                    </a>
+                    <a href="/restock.html" class="flex flex-col items-center justify-center p-2.5 rounded-xl border transition bg-slate-800/90 hover:bg-slate-800 text-slate-200 border-slate-700/80">
+                        <span class="text-xl mb-1">📥</span>
+                        <span class="text-xs font-bold leading-tight">Restock</span>
+                    </a>
+                </div>
+            </div>
+
+            <!-- Collapsible Tile: Other Menus & Management -->
+            <div class="border border-slate-800 rounded-2xl bg-slate-800/40 overflow-hidden">
+                <button id="toggle-other-menus-btn" type="button" class="w-full flex items-center justify-between px-3.5 py-3 bg-slate-800/80 hover:bg-slate-800 active:bg-slate-750 text-left transition">
+                    <div class="flex items-center gap-2.5">
+                        <span class="w-7 h-7 rounded-lg bg-orange-600/20 text-orange-400 flex items-center justify-center text-xs font-bold">📂</span>
+                        <div>
+                            <span class="text-xs font-black text-white block">Other Menus & Management</span>
+                            <span class="text-[10px] text-slate-400 font-medium block">Clients, staff, analytics, reports & settings</span>
+                        </div>
+                    </div>
+                    <svg id="chevron-other-menus" class="h-4 w-4 text-slate-400 transition-transform duration-200 rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                    </svg>
+                </button>
+
+                <!-- Collapsible Tile Body -->
+                <div id="collapsible-other-menus" class="p-2 space-y-1 bg-slate-900/60 border-t border-slate-800/60 ">
+                    <a href="/customers.html" class="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold admin-only hidden transition bg-slate-800/60 hover:bg-slate-800 text-slate-200">
+                        <span class="text-base">👥</span>
+                        <div class="flex flex-col">
+                            <span>Customers & Debt Ledger</span>
+                            <span class="text-[10px] font-normal opacity-75">Balances, itemized credit & statements</span>
+                        </div>
+                    </a>
+                    <a href="/users.html" class="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold admin-only hidden transition bg-slate-800/60 hover:bg-slate-800 text-slate-200">
+                        <span class="text-base">🛡️</span>
+                        <div class="flex flex-col">
+                            <span>Users & Cashier Staff</span>
+                            <span class="text-[10px] font-normal opacity-75">Roles, PIN security & shift audits</span>
+                        </div>
+                    </a>
+                    <a href="/admin.html" class="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold admin-only hidden transition bg-slate-800/60 hover:bg-slate-800 text-slate-200">
+                        <span class="text-base">⚡</span>
+                        <div class="flex flex-col">
+                            <span>Admin Dashboard</span>
+                            <span class="text-[10px] font-normal opacity-75">Quick status & store health</span>
+                        </div>
+                    </a>
+                    <a href="/analytics.html" class="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold admin-only hidden transition bg-slate-800/60 hover:bg-slate-800 text-slate-200">
+                        <span class="text-base">📊</span>
+                        <div class="flex flex-col">
+                            <span>Analytics & Financial KPIs</span>
+                            <span class="text-[10px] font-normal opacity-75">Sales trends, profit & revenue metrics</span>
+                        </div>
+                    </a>
+                    <a href="/settings.html" class="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold admin-only hidden transition bg-orange-600 text-white shadow">
+                        <span class="text-base">⚙️</span>
+                        <div class="flex flex-col">
+                            <span>Store Settings</span>
+                            <span class="text-[10px] font-normal opacity-75">Business profile, receipt text & defaults</span>
+                        </div>
+                    </a>
+                    <a href="/profile.html" class="flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold transition bg-slate-800/60 hover:bg-slate-800 text-slate-200">
+                        <span class="text-base">👤</span>
+                        <div class="flex flex-col">
+                            <span>My Profile</span>
+                            <span class="text-[10px] font-normal opacity-75">Change security PIN & credentials</span>
+                        </div>
+                    </a>
+                </div>
+            </div>
+
+            <!-- Terminal Sign Out Action -->
+            <div class="pt-1 pb-1">
+                <button id="btn-logout-mobile" class="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-xs font-bold text-red-400 hover:text-white bg-red-950/40 hover:bg-red-900/70 border border-red-900/60 transition">
+                    <span>🚪</span>
+                    <span>Sign Out of Terminal</span>
+                </button>
+            </div>
         </div>
     </nav>
 
-    <main class="flex-1 overflow-y-auto p-4 md:p-6">
+    <main class="flex-1 overflow-y-auto p-4 md:p-6 pb-28 sm:pb-12">
         <div class="max-w-5xl mx-auto">
 
             <!-- Page Header -->
