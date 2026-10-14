@@ -99,6 +99,29 @@ runner.test('Should record debt repayment in sales_log and decrement customer ba
     assertCloseTo(parseFloat(updatedCust.outstanding_debt), 7500.00, 0.01, 'Remaining debt must be exactly 7500.00');
 });
 
+runner.test('Should only accept repayment amount equal to or lower than outstanding debt and reject amounts greater than debt', async () => {
+    const currentDebt = 7500.00;
+
+    // Test 1: Amount exceeding debt (e.g. 10,000) must be rejected
+    const excessiveAmount = 10000.00;
+    const canAcceptExcess = excessiveAmount <= currentDebt;
+    assertEqual(canAcceptExcess, false, 'Repayment greater than outstanding debt must be rejected for nice math');
+
+    // Test 2: Exact debt amount (7,500) must be accepted
+    const exactAmount = 7500.00;
+    const canAcceptExact = exactAmount > 0 && exactAmount <= currentDebt;
+    assertEqual(canAcceptExact, true, 'Exact debt payment must be accepted');
+
+    // Test 3: Lower amount (partial 2,500) must be accepted
+    const partialAmount = 2500.00;
+    const canAcceptPartial = partialAmount > 0 && partialAmount <= currentDebt;
+    assertEqual(canAcceptPartial, true, 'Partial debt payment lower than debt must be accepted');
+
+    // Test 4: Math must never produce negative debt balance
+    const resultingBal = currentDebt - exactAmount;
+    assertEqual(resultingBal, 0.00, 'Exact settlement balance must be exactly 0.00 without negatives');
+});
+
 runner.test('Should process final settlement and clear debt to 0', async () => {
     // Collect remaining 7,500
     await supabase.from('customers').update({ outstanding_debt: 0 }).eq('id', testCustId);

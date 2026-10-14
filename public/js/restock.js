@@ -1049,6 +1049,9 @@ function openDirectSupplierPaymentModal(supplierId) {
     showModal('Record Payment to Supplier', content, async (closeModal) => {
         const amt = parseFloat(document.getElementById('pay-amt')?.value) || 0;
         if (amt <= 0) throw new Error('Payment amount must be greater than zero.');
+        if (currentBal > 0 && amt > currentBal) {
+            throw new Error(`Payment amount (KSh ${amt.toLocaleString()}) cannot exceed the supplier debt of KSh ${currentBal.toLocaleString()}. Only accept the balance or lower.`);
+        }
 
         const method = document.getElementById('pay-method')?.value || 'Cash (From Shelf)';
         const ref = document.getElementById('pay-ref')?.value || '';

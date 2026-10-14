@@ -1482,10 +1482,22 @@ document.getElementById('btn-collect-debt-from-ledger')?.addEventListener('click
 document.getElementById('collect-debt-cust-select')?.addEventListener('change', (e) => {
     const opt = e.target.options[e.target.selectedIndex];
     const balEl = document.getElementById('collect-debt-bal-display');
+    const amtInput = document.getElementById('collect-debt-amount');
     if (opt && opt.value) {
-        balEl.textContent = `KSh ${parseFloat(opt.dataset.debt || 0).toFixed(2)}`;
+        const debt = parseFloat(opt.dataset.debt || 0);
+        balEl.textContent = `KSh ${debt.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+        if (amtInput) {
+            amtInput.max = debt;
+            amtInput.placeholder = debt > 0 ? `Max KSh ${debt.toFixed(2)}` : '0.00';
+            amtInput.value = debt > 0 ? debt : '';
+        }
     } else {
         balEl.textContent = 'KSh 0.00';
+        if (amtInput) {
+            amtInput.max = '';
+            amtInput.placeholder = '0.00';
+            amtInput.value = '';
+        }
     }
 });
 
@@ -1494,17 +1506,26 @@ document.getElementById('btn-submit-debt-collect')?.addEventListener('click', as
     const method = document.getElementById('collect-debt-method').value;
     const amount = parseFloat(document.getElementById('collect-debt-amount').value || 0);
 
-    if (!custId) return alert('Select a customer');
-    if (amount <= 0) return alert('Enter a valid amount paid');
+    if (!custId) return alert('Select a customer with an active debt balance');
+    if (amount <= 0) return alert('Enter a valid payment amount greater than zero');
+
+    const cust = customers.find(c => c.id === custId);
+    const currentDebt = parseFloat(cust?.outstanding_debt || 0);
+
+    if (currentDebt <= 0) {
+        return alert(`Customer "${cust ? cust.name : 'Selected'}" has no outstanding debt (Balance is KSh 0.00).`);
+    }
+
+    if (amount > currentDebt) {
+        return alert(`Payment amount of KSh ${amount.toFixed(2)} cannot exceed the outstanding debt of KSh ${currentDebt.toFixed(2)}. Only accept the exact debt amount or lower for clean accounting.`);
+    }
 
     const btn = document.getElementById('btn-submit-debt-collect');
     btn.disabled = true;
     btn.innerHTML = 'Processing...';
 
     try {
-        const cust = customers.find(c => c.id === custId);
-        const currentDebt = parseFloat(cust?.outstanding_debt || 0);
-        const newDebt = Math.max(0, currentDebt - amount);
+        const newDebt = currentDebt - amount;
 
         // Record in sales_log as debt_collection
         const row = {

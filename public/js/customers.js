@@ -780,6 +780,10 @@ function printSingleReceiptPDF(receiptGroup, customer) {
 let repayCustomerId = null;
 
 function openRepaymentModal(id, name, currentBalance) {
+    if (currentBalance <= 0) {
+        return alert(`Customer "${name}" has no outstanding balance to repay (Debt is KSh 0.00).`);
+    }
+
     repayCustomerId = id;
     const modal = document.getElementById('modal-repay-debt');
     const nameLabel = document.getElementById('repay-cust-name-label');
@@ -792,6 +796,7 @@ function openRepaymentModal(id, name, currentBalance) {
     if (amtInput) {
         amtInput.value = currentBalance > 0 ? currentBalance : '';
         amtInput.max = currentBalance;
+        amtInput.placeholder = `Max KSh ${currentBalance.toFixed(2)}`;
     }
     if (notesInput) notesInput.value = '';
 
@@ -832,7 +837,15 @@ document.getElementById('btn-submit-repayment')?.addEventListener('click', async
     if (amt <= 0) return alert('Enter a valid payment amount greater than zero');
 
     const currentDebt = parseFloat(cust.outstanding_debt || 0);
-    const newDebt = Math.max(0, currentDebt - amt);
+    if (currentDebt <= 0) {
+        return alert(`Customer "${cust.name}" has no outstanding balance to repay (Debt is KSh 0.00).`);
+    }
+
+    if (amt > currentDebt) {
+        return alert(`Payment amount (KSh ${amt.toFixed(2)}) cannot exceed the outstanding debt of KSh ${currentDebt.toFixed(2)}. Only accept the exact debt amount or lower for clean accounting.`);
+    }
+
+    const newDebt = currentDebt - amt;
 
     const btn = document.getElementById('btn-submit-repayment');
     btn.disabled = true;

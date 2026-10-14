@@ -1,4 +1,4 @@
-const CACHE_NAME = 'litaj-hardware-v14-settings-and-audit-trail';
+const CACHE_NAME = 'litaj-hardware-v15-fullscreen-nav-and-debt-cap';
 
 // Only pre-cache the offline fallback page at install time.
 // Everything else gets cached as the user visits it (cache-on-navigate).
