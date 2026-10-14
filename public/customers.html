@@ -23,46 +23,52 @@
 <body class="bg-slate-100 min-h-screen flex flex-col font-sans text-slate-800">
 
     <!-- Top Navigation Bar -->
-    <nav class="bg-slate-900 text-white shadow-md flex-shrink-0 sticky top-0 z-40">
+    <nav class="bg-slate-900 text-white shadow-md flex-shrink-0 sticky top-0 z-40 border-b border-slate-800">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="flex items-center justify-between h-14">
-                <div class="flex items-center gap-2">
-                    <span class="w-8 h-8 rounded-lg bg-orange-600 flex items-center justify-center font-black text-white text-base shadow">LH</span>
-                    <span class="text-lg font-black tracking-tight text-white">Litaj <span class="text-orange-500">Hardware</span></span>
-                </div>
+                <!-- Brand Logo & Name -->
+                <a href="/pos.html" class="flex items-center gap-2.5 hover:opacity-90 transition flex-shrink-0">
+                    <span class="w-8 h-8 rounded-lg bg-orange-600 flex items-center justify-center font-black text-white text-sm shadow">LH</span>
+                    <span class="text-base sm:text-lg font-black tracking-tight text-white leading-none">Litaj <span class="text-orange-500">Hardware</span></span>
+                </a>
+
                 <!-- Mobile menu button -->
-                <div class="flex md:hidden">
-                    <button id="mobile-menu-btn" class="text-gray-300 hover:text-white focus:outline-none p-2">
-                        <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <div class="flex lg:hidden items-center gap-2">
+                    <button id="mobile-menu-btn" type="button" aria-label="Toggle navigation menu" class="text-slate-300 hover:text-white p-2 rounded-xl bg-slate-800 border border-slate-700 focus:outline-none transition">
+                        <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
                         </svg>
                     </button>
                 </div>
-                <!-- Desktop menu -->
-                <div class="hidden md:flex items-center space-x-1.5">
-                    <a href="/pos.html" class="px-3 py-1.5 text-xs font-bold rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 transition">POS</a>
-                    <a href="/inventory.html" class="px-3 py-1.5 text-xs font-bold rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 transition">Inventory</a>
-                    <a href="/restock.html" class="px-3 py-1.5 text-xs font-bold rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 transition">Restock</a>
-                    <a href="/customers.html" class="px-3 py-1.5 text-xs font-bold rounded-xl admin-only hidden bg-orange-600 text-white shadow transition">Customers</a>
-                    <a href="/users.html" class="px-3 py-1.5 text-xs font-bold rounded-xl admin-only hidden bg-slate-800 hover:bg-slate-700 text-slate-200 transition">Users</a>
-                    <a href="/admin.html" class="px-3 py-1.5 text-xs font-bold rounded-xl admin-only hidden bg-slate-800 hover:bg-slate-700 text-slate-200 transition">Admin</a>
-                    <a href="/analytics.html" class="px-3 py-1.5 text-xs font-bold rounded-xl admin-only hidden bg-slate-800 hover:bg-slate-700 text-slate-200 transition">Analytics</a>
-                    <a href="/profile.html" class="px-3 py-1.5 text-xs font-bold rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 transition">Profile</a>
-                    <button id="btn-logout" class="px-3 py-1.5 text-xs font-bold rounded-xl border border-slate-700 hover:bg-red-950/40 text-red-400 transition ml-2">Logout</button>
+
+                <!-- Desktop Menu -->
+                <div class="hidden lg:flex items-center space-x-1 sm:space-x-1.5">
+                    <a href="/pos.html" class="px-2.5 sm:px-3 py-1.5 text-xs font-bold rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 transition">POS</a>
+                    <a href="/inventory.html" class="px-2.5 sm:px-3 py-1.5 text-xs font-bold rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 transition">Inventory</a>
+                    <a href="/restock.html" class="px-2.5 sm:px-3 py-1.5 text-xs font-bold rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 transition">Restock</a>
+                    <a href="/customers.html" class="px-2.5 sm:px-3 py-1.5 text-xs font-bold rounded-xl admin-only hidden bg-orange-600 text-white shadow transition">Customers</a>
+                    <a href="/users.html" class="px-2.5 sm:px-3 py-1.5 text-xs font-bold rounded-xl admin-only hidden bg-slate-800 hover:bg-slate-700 text-slate-200 transition">Users</a>
+                    <a href="/admin.html" class="px-2.5 sm:px-3 py-1.5 text-xs font-bold rounded-xl admin-only hidden bg-slate-800 hover:bg-slate-700 text-slate-200 transition">Admin</a>
+                    <a href="/analytics.html" class="px-2.5 sm:px-3 py-1.5 text-xs font-bold rounded-xl admin-only hidden bg-slate-800 hover:bg-slate-700 text-slate-200 transition">Analytics</a>
+                    <a href="/settings.html" class="px-2.5 sm:px-3 py-1.5 text-xs font-bold rounded-xl admin-only hidden bg-slate-800 hover:bg-slate-700 text-slate-200 transition">Settings</a>
+                    <a href="/profile.html" class="px-2.5 sm:px-3 py-1.5 text-xs font-bold rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 transition">Profile</a>
+                    <button id="btn-logout" class="px-2.5 sm:px-3 py-1.5 text-xs font-bold rounded-xl border border-slate-700 hover:bg-red-950/50 hover:border-red-800 text-red-400 transition ml-1 sm:ml-2">Logout</button>
                 </div>
             </div>
         </div>
-        <!-- Mobile Menu (hidden by default) -->
-        <div id="mobile-menu" class="hidden md:hidden bg-slate-800 border-t border-slate-700 px-4 pt-3 pb-4 space-y-2">
-            <a href="/pos.html" class="block px-3 py-2 rounded-xl text-sm font-bold bg-slate-700 text-white">POS Register</a>
-            <a href="/inventory.html" class="block px-3 py-2 rounded-xl text-sm font-bold bg-slate-700 text-white">Inventory</a>
-            <a href="/restock.html" class="block px-3 py-2 rounded-xl text-sm font-bold bg-slate-700 text-white">Restock & Suppliers</a>
-            <a href="/customers.html" class="block px-3 py-2 rounded-xl text-sm font-bold bg-orange-600 text-white admin-only hidden">Customers & Debts</a>
-            <a href="/users.html" class="block px-3 py-2 rounded-xl text-sm font-bold bg-slate-700 text-white admin-only hidden">Users</a>
-            <a href="/admin.html" class="block px-3 py-2 rounded-xl text-sm font-bold bg-slate-700 text-white admin-only hidden">Admin Dashboard</a>
-            <a href="/analytics.html" class="block px-3 py-2 rounded-xl text-sm font-bold bg-slate-700 text-white admin-only hidden">Analytics</a>
-            <a href="/profile.html" class="block px-3 py-2 rounded-xl text-sm font-bold bg-slate-700 text-white">Profile</a>
-            <button id="btn-logout-mobile" class="w-full text-left block px-3 py-2 rounded-xl text-sm font-bold text-red-400 hover:bg-slate-700">Logout</button>
+
+        <!-- Mobile Menu Dropdown -->
+        <div id="mobile-menu" class="hidden lg:hidden absolute w-full left-0 top-14 bg-slate-800 border-t border-slate-700 px-4 pt-3 pb-4 space-y-1.5 shadow-2xl z-50">
+            <a href="/pos.html" class="block px-3 py-2 rounded-xl text-sm font-bold bg-slate-700 hover:bg-slate-600 text-slate-200">POS Register</a>
+            <a href="/inventory.html" class="block px-3 py-2 rounded-xl text-sm font-bold bg-slate-700 hover:bg-slate-600 text-slate-200">Inventory</a>
+            <a href="/restock.html" class="block px-3 py-2 rounded-xl text-sm font-bold bg-slate-700 hover:bg-slate-600 text-slate-200">Restock & Orders</a>
+            <a href="/customers.html" class="block px-3 py-2 rounded-xl text-sm font-bold bg-orange-600 text-white shadow admin-only hidden">Customers & Debts</a>
+            <a href="/users.html" class="block px-3 py-2 rounded-xl text-sm font-bold admin-only hidden bg-slate-700 hover:bg-slate-600 text-slate-200">Users & Staff</a>
+            <a href="/admin.html" class="block px-3 py-2 rounded-xl text-sm font-bold admin-only hidden bg-slate-700 hover:bg-slate-600 text-slate-200">Admin Dashboard</a>
+            <a href="/analytics.html" class="block px-3 py-2 rounded-xl text-sm font-bold admin-only hidden bg-slate-700 hover:bg-slate-600 text-slate-200">Analytics & KPIs</a>
+            <a href="/settings.html" class="block px-3 py-2 rounded-xl text-sm font-bold admin-only hidden bg-slate-700 hover:bg-slate-600 text-slate-200">Store Settings</a>
+            <a href="/profile.html" class="block px-3 py-2 rounded-xl text-sm font-bold bg-slate-700 hover:bg-slate-600 text-slate-200">My Profile</a>
+            <button id="btn-logout-mobile" class="w-full text-left block px-3 py-2 rounded-xl text-sm font-bold text-red-400 hover:bg-red-950/40 border border-slate-700 transition">Logout</button>
         </div>
     </nav>
 

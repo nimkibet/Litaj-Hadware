@@ -30,7 +30,32 @@ export function requireAuth() {
     setTimeout(unhide, 50); // Fallback for dynamic renders
     setTimeout(unhide, 200); // Fallback for dynamic renders
     
+    // Universal mobile navigation menu toggle
+    const setupNavEvents = () => {
+        const btn = document.getElementById('mobile-menu-btn');
+        const menu = document.getElementById('mobile-menu');
+        if (btn && menu && !btn.dataset.bound) {
+            btn.dataset.bound = 'true';
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                menu.classList.toggle('hidden');
+            });
+            document.addEventListener('click', (e) => {
+                if (!menu.contains(e.target) && !btn.contains(e.target) && !menu.classList.contains('hidden')) {
+                    menu.classList.add('hidden');
+                }
+            });
+        }
+    };
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', setupNavEvents);
+    } else {
+        setupNavEvents();
+    }
+
     document.addEventListener('click', e => {
-        if (e.target.id === 'btn-logout') logout();
+        if (e.target.closest('#btn-logout, #btn-logout-mobile, .action-logout')) {
+            logout();
+        }
     });
 }
