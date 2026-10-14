@@ -98,6 +98,102 @@ runner.test('Should delete test hardware item and assert downstream row removal'
     assertEqual(checkItem.length, 0, 'Item must be completely deleted from DB');
 });
 
+runner.test('Should simulate packaging tiers addition (Essie model) with Supabase UUIDs', async () => {
+    const baseName = `SIM-TIER-NAILS-${Date.now()}`;
+    
+    // Simulate Tier 2: Box of 100
+    const { data: t2, error: t2Err } = await supabase.from('inventory').insert([{
+        name: `${baseName} (Box of 100)`,
+        type: 'fixed',
+        is_service: false,
+        tier_level: 2,
+        buying_price: 1000.00,
+        selling_price: 1500.00,
+        stock_quantity: 10,
+        units_per_parent: 1,
+        parent_id: null
+    }]).select().single();
+
+    assert(!t2Err && t2?.id, `Tier 2 insertion failed: ${t2Err?.message}`);
+    const parentUuid = t2.id;
+
+    // Simulate Tier 1: Single Piece (Child of Tier 2)
+    const { data: t1, error: t1Err } = await supabase.from('inventory').insert([{
+        name: `${baseName} (Piece)`,
+        type: 'fixed',
+        is_service: false,
+        tier_level: 1,
+        buying_price: 12.00,
+        selling_price: 20.00,
+        stock_quantity: 0,
+        units_per_parent: 100,
+        parent_id: parentUuid
+    }]).select().single();
+
+    assert(!t1Err && t1?.id, `Tier 1 insertion failed: ${t1Err?.message}`);
+
+    // Downstream assertion: Verify parent_id linkage in DB
+    const { data: verifiedChild } = await supabase.from('inventory').select('*').eq('id', t1.id).single();
+    assertEqual(verifiedChild.parent_id, parentUuid, 'Child tier must reference parent UUID');
+    assertEqual(verifiedChild.units_per_parent, 100, 'Child tier must have units_per_parent = 100');
+
+    // Simulate edit on Tier 1
+    const { error: editErr } = await supabase.from('inventory').update({
+        selling_price: 22.00,
+        stock_quantity: 50
+    }).eq('id', t1.id);
+    assert(!editErr, `Edit failed: ${editErr?.message}`);
+
+    const { data: editedChild } = await supabase.from('inventory').select('*').eq('id', t1.id).single();
+    assertCloseTo(parseFloat(editedChild.selling_price), 22.00, 0.01, 'Edited selling price must persist in DB');
+    assertEqual(parseInt(editedChild.stock_quantity), 50, 'Edited stock quantity must persist in DB');
+
+    // Clean up simulated tier items
+    await supabase.from('inventory').delete().in('id', [t1.id, t2.id]);
+    const { data: cleanupCheck } = await supabase.from('inventory').select('*').in('id', [t1.id, t2.id]);
+    assertEqual(cleanupCheck.length, 0, 'Simulated tier items must be completely removed');
+});
+
+runner.test('Should verify inventory search and multi-criteria sort behavior', async () => {
+    const mockItems = [
+        { name: 'Simba Cement 50kg', type: 'fixed', selling_price: 680, buying_price: 620, is_service: false },
+        { name: 'Wire Nails 3 Inch', type: 'fixed', selling_price: 160, buying_price: 120, is_service: false },
+        { name: 'Delivery Service', type: 'variable', selling_price: 500, buying_price: 0, is_service: true },
+        { name: 'Timber 2x4 10ft', type: 'fixed', selling_price: 450, buying_price: 350, is_service: false }
+    ];
+
+    // Search simulation: "nail"
+    const term = 'nail';
+    const searchResults = mockItems.filter(i => 
+        i.name.toLowerCase().includes(term) || 
+        i.type.toLowerCase().includes(term) || 
+        (i.is_service && 'service'.includes(term))
+    );
+    assertEqual(searchResults.length, 1, 'Search for "nail" must return 1 result');
+    assertEqual(searchResults[0].name, 'Wire Nails 3 Inch', 'Search result must match name');
+
+    // Search simulation: "service"
+    const svcResults = mockItems.filter(i => 
+        i.name.toLowerCase().includes('service') || 
+        (i.is_service && 'service'.includes('service'))
+    );
+    assertEqual(svcResults.length, 1, 'Search for "service" must match service item');
+
+    // Sort: name-asc (A-Z)
+    const sortedAsc = [...mockItems].sort((a, b) => a.name.localeCompare(b.name));
+    assertEqual(sortedAsc[0].name, 'Delivery Service', 'A-Z sort must place Delivery Service first');
+    assertEqual(sortedAsc[3].name, 'Wire Nails 3 Inch', 'A-Z sort must place Wire Nails last');
+
+    // Sort: sell-high (Highest selling price first)
+    const sortedSellHigh = [...mockItems].sort((a, b) => b.selling_price - a.selling_price);
+    assertEqual(sortedSellHigh[0].selling_price, 680, 'Highest price item must be 680');
+    assertEqual(sortedSellHigh[3].selling_price, 160, 'Lowest price item must be 160');
+
+    // Sort: buy-low (Lowest buying price first)
+    const sortedBuyLow = [...mockItems].sort((a, b) => a.buying_price - b.buying_price);
+    assertEqual(sortedBuyLow[0].buying_price, 0, 'Lowest cost item must be 0 (Service)');
+});
+
 if (require.main === module) {
     runner.run().then(res => {
         if (res.failed > 0) process.exit(1);

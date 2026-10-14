@@ -954,21 +954,13 @@ async function processFinalSale() {
             await supabase.from('customers').update({ outstanding_debt: newBal }).eq('id', customerId);
         }
 
-        const sendWhatsApp = document.getElementById('chk-whatsapp-receipt')?.checked === true;
-        let waPhone = document.getElementById('whatsapp-phone-input')?.value.trim();
-        const cust = customers.find(c => c.id === customerId);
-        if (!waPhone && cust?.phone) {
-            waPhone = cust.phone;
-        }
-
-        // Generate PDF Doc if receipt printing OR WhatsApp sharing is requested
+        // Generate PDF Doc if receipt printing is requested
         let pdfDoc = null;
-        if (generateReceipt || sendWhatsApp) {
+        if (generateReceipt) {
             pdfDoc = buildReceiptPDFDoc(receiptNo, cart, grandTotal, activePaymentMethod, tenderAmt, changeAmt, customerId);
-        }
-
-        if (generateReceipt && pdfDoc) {
-            pdfDoc.save(`Receipt_${receiptNo}.pdf`);
+            if (pdfDoc) {
+                pdfDoc.save(`Receipt_${receiptNo}.pdf`);
+            }
         }
 
         const completedItems = [...cart];
@@ -977,19 +969,12 @@ async function processFinalSale() {
             items: completedItems,
             grandTotal,
             method: activePaymentMethod,
-            phone: waPhone,
             customerName: cust ? cust.name : null,
             tenderAmt,
             changeAmt,
             notes: paymentRef,
             doc: pdfDoc || buildReceiptPDFDoc(receiptNo, completedItems, grandTotal, activePaymentMethod, tenderAmt, changeAmt, customerId)
         };
-
-        if (sendWhatsApp) {
-            shareReceiptViaWhatsApp({
-                ...lastCompletedSale
-            });
-        }
 
         // Reset cart and checkout modal
         cart = [];
@@ -1005,7 +990,7 @@ async function processFinalSale() {
         await loadInventory();
         await loadTodaysSales();
 
-        // Open the Sale Success & WhatsApp Share Dialog
+        // Open the Sale Success Dialog
         openSaleSuccessModal(lastCompletedSale);
 
     } catch (err) {
@@ -1025,28 +1010,14 @@ function openSaleSuccessModal(sale) {
     if (!modal) return;
 
     const info = document.getElementById('success-receipt-info');
-    const phoneInput = document.getElementById('success-wa-phone-input');
-
     if (info) {
         info.textContent = `Ref: #${sale.receiptNo} • KSh ${sale.grandTotal.toLocaleString(undefined, {minimumFractionDigits: 2})} (${sale.method})`;
-    }
-    if (phoneInput) {
-        phoneInput.value = sale.phone || '';
     }
 
     modal.classList.remove('hidden');
 }
 
 // Button Handlers for Sale Success Dialog
-document.getElementById('btn-success-send-wa')?.addEventListener('click', () => {
-    if (!lastCompletedSale) return;
-    const phone = document.getElementById('success-wa-phone-input')?.value.trim();
-    shareReceiptViaWhatsApp({
-        ...lastCompletedSale,
-        phone: phone || lastCompletedSale.phone
-    });
-});
-
 document.getElementById('btn-success-print-pdf')?.addEventListener('click', () => {
     if (!lastCompletedSale) return;
     if (lastCompletedSale.doc) {
@@ -1057,41 +1028,8 @@ document.getElementById('btn-success-print-pdf')?.addEventListener('click', () =
     }
 });
 
-document.getElementById('btn-success-share-pdf')?.addEventListener('click', async () => {
-    if (!lastCompletedSale) return;
-    await shareReceiptPDFFile({
-        doc: lastCompletedSale.doc,
-        receiptNo: lastCompletedSale.receiptNo,
-        title: `Receipt #${lastCompletedSale.receiptNo}`
-    });
-});
-
 document.getElementById('btn-success-done')?.addEventListener('click', () => {
     document.getElementById('modal-sale-success')?.classList.add('hidden');
-});
-
-// WhatsApp Checkbox and Customer Phone Auto-fill
-document.getElementById('chk-whatsapp-receipt')?.addEventListener('change', (e) => {
-    const box = document.getElementById('whatsapp-phone-container');
-    if (e.target.checked) {
-        box?.classList.remove('hidden');
-        const custId = document.getElementById('debt-customer-dropdown')?.value;
-        const cust = customers.find(c => c.id === custId);
-        const phoneInput = document.getElementById('whatsapp-phone-input');
-        if (cust?.phone && phoneInput && !phoneInput.value) {
-            phoneInput.value = cust.phone;
-        }
-    } else {
-        box?.classList.add('hidden');
-    }
-});
-
-document.getElementById('debt-customer-dropdown')?.addEventListener('change', (e) => {
-    const cust = customers.find(c => c.id === e.target.value);
-    const phoneInput = document.getElementById('whatsapp-phone-input');
-    if (cust?.phone && phoneInput) {
-        phoneInput.value = cust.phone;
-    }
 });
 
 function showToast(msg) {
@@ -1195,121 +1133,6 @@ function buildReceiptPDFDoc(receiptNo, items, grandTotal, method, tendered, chan
 function generateReceiptPDF(receiptNo, items, grandTotal, method, tendered, change, customerId) {
     const doc = buildReceiptPDFDoc(receiptNo, items, grandTotal, method, tendered, change, customerId);
     if (doc) doc.save(`Receipt_${receiptNo}.pdf`);
-}
-
-function formatKenyanWhatsAppPhone(raw) {
-    if (!raw) return '';
-    let digits = raw.replace(/\D/g, '');
-    if (digits.startsWith('254') && digits.length === 12) {
-        return digits;
-    }
-    if (digits.startsWith('0') && digits.length === 10) {
-        return '254' + digits.slice(1);
-    }
-    if ((digits.startsWith('7') || digits.startsWith('1')) && digits.length === 9) {
-        return '254' + digits;
-    }
-    return digits;
-}
-
-function buildWhatsAppReceiptText({ receiptNo, items, grandTotal, method, tendered, change, customerName, notes }) {
-    const storeName = storeSettings.store_name || "LITAJ HARDWARE";
-    const storePhone = storeSettings.store_phone || "";
-    const storeTagline = storeSettings.store_tagline || "Building & Construction Materials";
-
-    let itemsList = (items || []).map(i => {
-        const qty = i.qty || 1;
-        const total = parseFloat(i.total || (i.selling_price * qty) || 0);
-        const unitPrice = parseFloat(i.selling_price || (total / qty) || 0);
-        return `• ${qty}x ${i.name}\n   @ KSh ${unitPrice.toLocaleString()} = *KSh ${total.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}*`;
-    }).join('\n');
-
-    let paymentDetails = `💳 Paid via: *${method}*`;
-    if (method === 'Cash' && parseFloat(tendered || 0) > 0) {
-        paymentDetails += `\n💵 Tendered: KSh ${parseFloat(tendered).toLocaleString(undefined, {minimumFractionDigits: 2})}`;
-        paymentDetails += `\n🪙 Change: KSh ${parseFloat(change || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}`;
-    }
-    if (notes) {
-        paymentDetails += `\n📝 Ref: ${notes}`;
-    }
-
-    const cashierName = currentUser ? (currentUser.full_name || currentUser.username) : 'Staff';
-
-    return (
-`🧾 *${storeName.toUpperCase()} - OFFICIAL RECEIPT*
-_${storeTagline}_
-${storePhone ? `📞 Tel: ${storePhone}\n` : ''}----------------------------------------
-*Receipt #:* ${receiptNo}
-*Date:* ${new Date().toLocaleString()}
-*Cashier:* ${cashierName}
-${customerName ? `*Customer:* ${customerName}\n` : ''}----------------------------------------
-*ITEMS:*
-${itemsList}
-----------------------------------------
-💰 *TOTAL: KSh ${parseFloat(grandTotal).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}*
-${paymentDetails}
-----------------------------------------
-🙏 *Thank you for choosing ${storeName}!*
-_Goods once sold are not returnable without receipt._`
-    );
-}
-
-function openWhatsAppDirect({ phone, message }) {
-    const cleanPhone = formatKenyanWhatsAppPhone(phone);
-    const encoded = encodeURIComponent(message);
-    const waUrl = cleanPhone 
-        ? `https://wa.me/${cleanPhone}?text=${encoded}`
-        : `https://wa.me/?text=${encoded}`;
-
-    // Open WhatsApp directly without triggering generic OS share dialogs
-    const win = window.open(waUrl, '_blank');
-    if (!win || win.closed || typeof win.closed === 'undefined') {
-        window.location.href = waUrl;
-    }
-    return true;
-}
-
-async function shareReceiptPDFFile({ doc, receiptNo, title }) {
-    if (!doc) {
-        alert('Receipt document is not ready to share.');
-        return;
-    }
-    if (!navigator.canShare) {
-        doc.save(`Receipt_${receiptNo}.pdf`);
-        return;
-    }
-
-    try {
-        const pdfBlob = doc.output('blob');
-        const pdfFile = new File([pdfBlob], `Receipt_${receiptNo}.pdf`, { type: 'application/pdf' });
-        if (navigator.canShare({ files: [pdfFile] })) {
-            await navigator.share({
-                files: [pdfFile],
-                title: title || `Receipt #${receiptNo}`
-            });
-        } else {
-            doc.save(`Receipt_${receiptNo}.pdf`);
-        }
-    } catch (err) {
-        if (err.name !== 'AbortError') {
-            console.warn('PDF share failed:', err);
-            doc.save(`Receipt_${receiptNo}.pdf`);
-        }
-    }
-}
-
-function shareReceiptViaWhatsApp({ doc, receiptNo, items, grandTotal, method, phone, customerName, tendered, change, notes }) {
-    const message = buildWhatsAppReceiptText({
-        receiptNo,
-        items,
-        grandTotal,
-        method,
-        tendered,
-        change,
-        customerName,
-        notes
-    });
-    return openWhatsAppDirect({ phone, message });
 }
 
 // ====================================================================
@@ -1423,9 +1246,6 @@ function renderTodaysLedger() {
                     </div>
                     ${!s.is_voided ? `
                         <div class="flex items-center gap-1.5">
-                            <button class="btn-share-wa-sale px-2.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 active:bg-emerald-200 text-emerald-700 font-bold text-xs sm:text-sm transition flex items-center gap-1" data-id="${s.id}" title="Send Receipt on WhatsApp">
-                                💬 <span class="hidden sm:inline">WhatsApp</span>
-                            </button>
                             <button class="btn-void-sale px-3 py-1.5 rounded-xl bg-red-50 hover:bg-red-100 active:bg-red-200 text-red-600 font-bold text-xs sm:text-sm transition" data-id="${s.id}">
                                 Void
                             </button>
@@ -1435,39 +1255,6 @@ function renderTodaysLedger() {
             </div>
         `;
     }).join('');
-
-    container.querySelectorAll('.btn-share-wa-sale').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const id = btn.dataset.id;
-            const sale = todaysSales.find(s => s.id === id);
-            if (!sale) return;
-
-            const custName = sale.customers?.name || null;
-            const custPhone = sale.customers?.phone || '';
-            const phone = prompt(`Enter customer WhatsApp number for Receipt #${sale.receipt_no}:`, custPhone);
-            if (phone === null) return; // user cancelled
-
-            const grandTotal = parseFloat(sale.total_charged || 0);
-            const items = [{
-                name: sale.inventory?.name || sale.notes || 'Hardware Item',
-                qty: sale.calculated_qty || 1,
-                total: grandTotal,
-                selling_price: grandTotal / (sale.calculated_qty || 1)
-            }];
-
-            shareReceiptViaWhatsApp({
-                receiptNo: sale.receipt_no,
-                items,
-                grandTotal,
-                method: sale.payment_method,
-                phone,
-                customerName: custName,
-                tendered: sale.amount_tendered || 0,
-                change: sale.change_given || 0,
-                notes: sale.notes
-            });
-        });
-    });
 
     container.querySelectorAll('.btn-void-sale').forEach(btn => {
         btn.addEventListener('click', async () => {

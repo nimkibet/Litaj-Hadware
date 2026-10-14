@@ -7,23 +7,28 @@
     <link rel="manifest" href="/manifest.json">
     <meta name="theme-color" content="#1e293b">
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <link rel="stylesheet" href="/css/style.css">
     <style>
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: #f1f5f9; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        .keypad-btn:active { transform: scale(0.95); background-color: #e2e8f0; }
+        .pin-dot { transition: all 0.2s ease; }
         body { animation: fadeIn 0.2s ease-in-out; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(2px); } to { opacity: 1; transform: translateY(0); } }
     </style>
 </head>
-<body class="bg-slate-100 min-h-screen flex flex-col font-sans text-slate-800">
+<body class="bg-gray-100 min-h-screen flex flex-col font-sans text-gray-800 overflow-x-hidden">
 
+    <!-- Top Navigation Bar -->
     <nav class="bg-slate-900 text-white shadow-md flex-shrink-0 relative z-40 border-b border-slate-800">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="flex items-center justify-between h-14">
                 <div class="flex items-center gap-3">
-                    <div class="w-8 h-8 rounded-lg bg-orange-600 flex items-center justify-center text-white font-black text-sm">LH</div>
+                    <div class="w-8 h-8 rounded-lg bg-orange-600 flex items-center justify-center text-white font-black text-sm shadow">LH</div>
                     <span class="text-base font-bold text-orange-400">Litaj Hardware</span>
                 </div>
                 <!-- Mobile menu button -->
@@ -37,11 +42,12 @@
                 <!-- Desktop menu -->
                 <div class="hidden md:flex space-x-1">
                     <a href="/pos.html" class="px-3 py-1.5 text-xs font-bold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200">POS</a>
-                    <a href="/inventory.html" class="px-3 py-1.5 text-xs font-bold rounded-lg bg-orange-600 text-white">Inventory</a>
+                    <a href="/inventory.html" class="px-3 py-1.5 text-xs font-bold rounded-lg bg-orange-600 text-white shadow">Inventory</a>
                     <a href="/customers.html" class="px-3 py-1.5 text-xs font-bold rounded-lg admin-only hidden bg-slate-800 hover:bg-slate-700 text-slate-200">Customers</a>
                     <a href="/users.html" class="px-3 py-1.5 text-xs font-bold rounded-lg admin-only hidden bg-slate-800 hover:bg-slate-700 text-slate-200">Users</a>
                     <a href="/admin.html" class="px-3 py-1.5 text-xs font-bold rounded-lg admin-only hidden bg-slate-800 hover:bg-slate-700 text-slate-200">Admin</a>
                     <a href="/analytics.html" class="px-3 py-1.5 text-xs font-bold rounded-lg admin-only hidden bg-slate-800 hover:bg-slate-700 text-slate-200">Analytics</a>
+                    <a href="/settings.html" class="px-3 py-1.5 text-xs font-bold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200">Settings</a>
                     <a href="/profile.html" class="px-3 py-1.5 text-xs font-bold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200">Profile</a>
                     <button id="btn-logout" class="px-3 py-1.5 text-xs font-bold rounded-lg bg-red-950/60 hover:bg-red-900 border border-red-800 text-red-300">Logout</button>
                 </div>
@@ -53,7 +59,9 @@
             <a href="/inventory.html" class="block px-3 py-2 text-sm font-semibold rounded bg-orange-600 text-white">Inventory</a>
             <a href="/customers.html" class="block px-3 py-2 text-sm font-semibold rounded admin-only hidden bg-slate-700 text-white">Customers</a>
             <a href="/users.html" class="block px-3 py-2 text-sm font-semibold rounded admin-only hidden bg-slate-700 text-white">Users</a>
+            <a href="/admin.html" class="block px-3 py-2 text-sm font-semibold rounded admin-only hidden bg-slate-700 text-white">Admin</a>
             <a href="/analytics.html" class="block px-3 py-2 text-sm font-semibold rounded admin-only hidden bg-slate-700 text-white">Analytics</a>
+            <a href="/settings.html" class="block px-3 py-2 text-sm font-semibold rounded bg-slate-700 text-white">Settings</a>
             <a href="/profile.html" class="block px-3 py-2 text-sm font-semibold rounded bg-slate-700 text-white">Profile</a>
             <button id="btn-logout-mobile" class="w-full text-left px-3 py-2 text-sm font-bold rounded text-red-400 bg-slate-900">Logout</button>
         </div>
@@ -68,39 +76,29 @@
         });
     </script>
 
+    <!-- Main Workspace -->
     <main class="flex-1 overflow-y-auto p-4 md:p-6 max-w-7xl mx-auto w-full space-y-4">
         <!-- Header & Action Controls -->
         <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
             <div>
-                <h1 class="text-xl font-black text-slate-800">Hardware Inventory</h1>
-                <p class="text-xs text-slate-500 mt-0.5">Manage stock levels, buying prices, selling prices, and categories</p>
+                <h1 class="text-2xl font-bold text-slate-800">Inventory Management</h1>
+                <p class="text-xs text-slate-500 mt-0.5">Product packaging tiers & stock lifecycle management</p>
             </div>
             <div class="flex items-center gap-2 flex-wrap w-full sm:w-auto">
-                <input type="text" id="inv-search" placeholder="Search item or barcode..." class="border border-slate-300 rounded-xl px-3 py-2 text-sm w-full sm:w-56 focus:outline-none focus:ring-2 focus:ring-orange-500">
-                <select id="inv-cat-filter" class="border border-slate-300 rounded-xl px-3 py-2 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-orange-500">
-                    <option value="ALL">All Categories</option>
-                    <option value="Building Materials">Building</option>
-                    <option value="Roofing">Roofing</option>
-                    <option value="Timber">Timber</option>
-                    <option value="Fasteners">Fasteners & Nails</option>
-                    <option value="Plumbing">Plumbing</option>
-                    <option value="Paints">Paints</option>
-                    <option value="Tools">Tools</option>
-                    <option value="Security">Security</option>
-                    <option value="Services">Services</option>
-                </select>
+                <input type="text" id="inv-search" placeholder="Search inventory..." class="border border-slate-300 rounded-xl px-3.5 py-2 w-full sm:w-64 focus:outline-none focus:ring-2 focus:ring-orange-500 text-sm">
                 <select id="inv-sort" class="border border-slate-300 rounded-xl px-3 py-2 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-orange-500">
-                    <option value="name-asc">Name (A-Z)</option>
-                    <option value="name-desc">Name (Z-A)</option>
-                    <option value="stock-low">Stock (Lowest First)</option>
-                    <option value="stock-high">Stock (Highest First)</option>
-                    <option value="sell-high">Price (High to Low)</option>
+                    <option value="name-asc">A-Z</option>
+                    <option value="name-desc">Z-A</option>
+                    <option value="sell-high">Selling Price (High-Low)</option>
+                    <option value="sell-low">Selling Price (Low-High)</option>
+                    <option value="buy-high">Buying Price (High-Low)</option>
+                    <option value="buy-low">Buying Price (Low-High)</option>
                 </select>
-                <button id="btn-export-excel" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap shadow-sm transition">
+                <button id="btn-export-excel" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap shadow-sm transition">
                     Export Excel
                 </button>
-                <button id="btn-add-item" class="bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap shadow-md shadow-orange-600/30 transition flex items-center gap-1">
-                    <span>+</span> Add Product
+                <button id="btn-add-item" class="bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap shadow-md shadow-orange-600/30 transition flex items-center gap-1">
+                    + Add New
                 </button>
             </div>
         </div>
@@ -108,94 +106,39 @@
         <!-- Inventory Table Card -->
         <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
             <div class="w-full overflow-x-auto">
-                <table class="w-full text-left text-sm border-collapse">
-                    <thead class="bg-slate-50 text-slate-600 text-xs uppercase font-bold border-b border-slate-200">
+                <table class="w-full text-left text-sm">
+                    <thead class="bg-slate-50 text-slate-600 border-b border-slate-200">
                         <tr>
-                            <th class="py-3 px-4">Product Name</th>
-                            <th class="py-3 px-4">Category</th>
-                            <th class="py-3 px-4">Barcode</th>
-                            <th class="py-3 px-4 text-right">Buying (Ksh)</th>
-                            <th class="py-3 px-4 text-right">Selling (Ksh)</th>
-                            <th class="py-3 px-4 text-center">Stock</th>
-                            <th class="py-3 px-4 text-center">Status</th>
-                            <th class="py-3 px-4 text-center">Actions</th>
+                            <th class="py-3.5 px-4 border-b font-bold">Name</th>
+                            <th class="py-3.5 px-4 border-b font-bold">Type</th>
+                            <th class="py-3.5 px-4 border-b text-right font-bold">Buying</th>
+                            <th class="py-3.5 px-4 border-b text-right font-bold">Selling</th>
+                            <th class="py-3.5 px-4 border-b text-center font-bold">Stock</th>
+                            <th class="py-3.5 px-4 border-b text-center font-bold">Yield / Pieces</th>
+                            <th class="py-3.5 px-4 border-b text-center font-bold">Actions</th>
                         </tr>
                     </thead>
-                    <tbody id="inv-tbody" class="divide-y divide-slate-100 text-slate-700">
-                        <tr><td colspan="8" class="py-12 text-center text-slate-400 font-medium">Loading inventory...</td></tr>
+                    <tbody id="inv-tbody" class="divide-y divide-slate-100">
+                        <!-- Populated dynamically via /js/inventory.js -->
                     </tbody>
                 </table>
             </div>
         </div>
     </main>
 
-    <!-- Modal: Add / Edit Hardware Product -->
-    <div id="modal-product" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm hidden p-4">
-        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden border border-slate-100 flex flex-col">
-            <div class="px-6 py-4 bg-slate-900 text-white flex justify-between items-center">
-                <h3 id="modal-product-title" class="text-base font-black text-white">Add New Hardware Product</h3>
-                <button onclick="document.getElementById('modal-product').classList.add('hidden')" class="text-slate-400 hover:text-white text-2xl font-bold">&times;</button>
-            </div>
-            <div class="p-6 space-y-4 overflow-y-auto max-h-[75vh]">
-                <input type="hidden" id="prod-id">
-                <div>
-                    <label class="block text-xs font-bold text-slate-600 mb-1">Product Name <span class="text-red-500">*</span></label>
-                    <input type="text" id="prod-name" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm font-bold focus:ring-2 focus:ring-orange-500 outline-none" placeholder="e.g. Simba Cement 50kg (32.5R)">
-                </div>
-                <div class="grid grid-cols-2 gap-3">
-                    <div>
-                        <label class="block text-xs font-bold text-slate-600 mb-1">Category</label>
-                        <select id="prod-category" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm font-semibold bg-white focus:ring-2 focus:ring-orange-500 outline-none">
-                            <option value="Building Materials">Building Materials</option>
-                            <option value="Roofing">Roofing</option>
-                            <option value="Timber">Timber</option>
-                            <option value="Fasteners">Fasteners & Nails</option>
-                            <option value="Plumbing">Plumbing</option>
-                            <option value="Paints">Paints</option>
-                            <option value="Tools">Tools</option>
-                            <option value="Security">Security</option>
-                            <option value="Electrical">Electrical</option>
-                            <option value="Services">Services</option>
-                            <option value="General">General</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label class="block text-xs font-bold text-slate-600 mb-1">Barcode (Optional)</label>
-                        <input type="text" id="prod-barcode" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-orange-500 outline-none" placeholder="Scan or type barcode">
-                    </div>
-                </div>
-                <div class="grid grid-cols-2 gap-3">
-                    <div>
-                        <label class="block text-xs font-bold text-slate-600 mb-1">Buying Price / Cost (Ksh)</label>
-                        <input type="number" id="prod-buying-price" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm font-bold focus:ring-2 focus:ring-orange-500 outline-none" value="0">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-bold text-slate-600 mb-1">Selling Price (Ksh) <span class="text-red-500">*</span></label>
-                        <input type="number" id="prod-selling-price" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm font-bold focus:ring-2 focus:ring-orange-500 outline-none" value="0">
-                    </div>
-                </div>
-                <div class="grid grid-cols-2 gap-3">
-                    <div>
-                        <label class="block text-xs font-bold text-slate-600 mb-1">Current Stock Quantity</label>
-                        <input type="number" id="prod-stock" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm font-bold focus:ring-2 focus:ring-orange-500 outline-none" value="0">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-bold text-slate-600 mb-1">Low Stock Alert Level</label>
-                        <input type="number" id="prod-min-threshold" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm font-bold focus:ring-2 focus:ring-orange-500 outline-none" value="10">
-                    </div>
-                </div>
-                <div class="flex items-center gap-2 pt-2">
-                    <input type="checkbox" id="prod-is-service" class="w-4 h-4 text-orange-600 rounded">
-                    <label for="prod-is-service" class="text-xs font-bold text-slate-700">This is a non-inventory Service (e.g. cutting, transport)</label>
-                </div>
-            </div>
-            <div class="px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-2">
-                <button onclick="document.getElementById('modal-product').classList.add('hidden')" class="px-4 py-2 bg-slate-200 hover:bg-slate-300 rounded-xl text-xs font-bold text-slate-700">Cancel</button>
-                <button id="btn-save-product" class="px-5 py-2 bg-orange-600 hover:bg-orange-700 rounded-xl text-xs font-bold text-white shadow-md shadow-orange-600/30">Save Product</button>
-            </div>
-        </div>
-    </div>
-
     <script type="module" src="/js/inventory.js"></script>
+
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js')
+                    .then(reg => {
+                        console.log('[SW] Registered, scope:', reg.scope);
+                        reg.update();
+                    })
+                    .catch(err => console.warn('[SW] Registration failed:', err));
+            });
+        }
+    </script>
 </body>
 </html>

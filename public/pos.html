@@ -517,21 +517,6 @@
                         </div>
                     </label>
 
-                    <!-- OPTIONAL WHATSAPP RECEIPT SHARE -->
-                    <label class="flex items-center gap-3.5 p-3.5 bg-emerald-50/70 active:bg-emerald-100/70 rounded-2xl border border-emerald-300 cursor-pointer transition select-none">
-                        <input type="checkbox" id="chk-whatsapp-receipt" class="w-5 h-5 text-emerald-600 rounded border-emerald-400 focus:ring-emerald-500">
-                        <div class="flex-1">
-                            <div class="text-sm sm:text-base font-black text-emerald-950 flex items-center gap-1.5">
-                                <span>💬 Send Receipt via WhatsApp</span>
-                                <span class="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-emerald-600 text-white">Direct</span>
-                            </div>
-                            <div class="text-xs sm:text-sm text-emerald-700 font-medium">Sends PDF receipt & itemized summary directly to customer</div>
-                        </div>
-                    </label>
-                    <div id="whatsapp-phone-container" class="hidden p-3 bg-emerald-50/40 rounded-xl border border-emerald-200 space-y-1">
-                        <label class="block text-xs font-bold text-emerald-900">Customer WhatsApp Phone:</label>
-                        <input type="tel" id="whatsapp-phone-input" placeholder="e.g. 0712 345 678 or 254712345678" class="w-full border-2 border-emerald-300 rounded-xl px-3.5 py-2.5 text-sm sm:text-base font-bold text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white">
-                    </div>
                 </div>
 
                 <div id="checkout-error-msg" class="hidden p-3 bg-red-50 border border-red-200 rounded-xl text-xs sm:text-sm font-bold text-red-600"></div>
@@ -550,7 +535,7 @@
     </div>
 
     <!-- ========================================================= -->
-    <!-- SALE SUCCESS & WHATSAPP RECEIPT MODAL                      -->
+    <!-- SALE SUCCESS MODAL                                         -->
     <!-- ========================================================= -->
     <div id="modal-sale-success" class="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-slate-950/80 backdrop-blur-sm hidden p-0 sm:p-4">
         <div class="bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl w-full max-w-md p-5 sm:p-6 space-y-4 pb-safe border border-slate-100">
@@ -562,36 +547,13 @@
                 <p id="success-receipt-info" class="text-xs sm:text-sm text-slate-500 font-semibold font-mono">Ref: LH-000000 • KSh 0.00</p>
             </div>
 
-            <!-- Prominent Direct WhatsApp Share Card -->
-            <div class="p-3.5 bg-emerald-50 rounded-2xl border-2 border-emerald-300 space-y-2.5">
-                <div class="flex items-center gap-2">
-                    <span class="text-2xl">💬</span>
-                    <div>
-                        <div class="text-sm font-black text-emerald-950">Direct WhatsApp to Customer</div>
-                        <div class="text-xs text-emerald-700 font-medium">Opens WhatsApp chat with receipt ready to send</div>
-                    </div>
-                </div>
-                <div class="flex gap-2">
-                    <input type="tel" id="success-wa-phone-input" placeholder="e.g. 0712 345 678" class="flex-1 border-2 border-emerald-400 rounded-xl px-3.5 py-2.5 text-sm sm:text-base font-bold text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white">
-                    <button id="btn-success-send-wa" class="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-black rounded-xl text-xs sm:text-sm flex items-center gap-1 shadow-md transition flex-shrink-0">
-                        <span>Open WhatsApp</span> 💬
-                    </button>
-                </div>
-                <div class="text-[11px] text-emerald-800 font-semibold flex items-center gap-1">
-                    <span>⚡</span> <span>Jumps straight into WhatsApp with customer — just tap Send!</span>
-                </div>
-            </div>
-
-            <!-- Secondary Actions: Download PDF, Share Document, Next Sale -->
-            <div class="grid grid-cols-2 gap-2 pt-1">
+            <!-- Modal Actions: Download PDF or Start Next Sale -->
+            <div class="grid grid-cols-2 gap-2 pt-2">
                 <button id="btn-success-print-pdf" class="py-3 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 active:bg-slate-300 text-slate-800 font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition border border-slate-200">
                     <span>🖨️</span> Download PDF
                 </button>
                 <button id="btn-success-done" class="py-3 px-3 rounded-xl bg-orange-600 hover:bg-orange-500 active:bg-orange-700 text-white font-black text-xs sm:text-sm flex items-center justify-center gap-1 transition shadow-md shadow-orange-600/20">
                     Next Sale →
-                </button>
-                <button id="btn-success-share-pdf" class="py-2.5 px-3 rounded-xl bg-slate-50 hover:bg-slate-100 active:bg-slate-200 text-slate-600 font-bold text-xs flex items-center justify-center gap-1.5 transition border border-slate-200 col-span-2">
-                    <span>📤</span> Share PDF Document File (All Apps)
                 </button>
             </div>
         </div>
