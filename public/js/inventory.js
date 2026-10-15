@@ -26,11 +26,51 @@ async function load() {
         const { data, error } = await supabase.from('inventory').select('*').order('name');
         if (error) throw error;
         allInventory = data || [];
+        populateCategoryFilter();
         renderTable();
     } catch (err) {
         console.error('Failed to load inventory:', err);
         tb.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-red-500 font-bold">Error loading inventory: ${err.message}</td></tr>`;
     }
+}
+
+const DEFAULT_CATEGORIES = [
+    'Building Materials',
+    'Cement & Masonry',
+    'Fasteners, Nails & Screws',
+    'Roofing & Timber',
+    'Plumbing & Pipes',
+    'Electrical & Lighting',
+    'Paints & Finishes',
+    'Hand & Power Tools',
+    'Steel, Rebars & Iron Sheets',
+    'General Hardware'
+];
+
+function populateCategoryFilter() {
+    const select = document.getElementById('inv-category-filter');
+    const existingCats = Array.from(new Set(allInventory.map(i => i.category || 'General Hardware'))).filter(Boolean);
+    const combinedCats = Array.from(new Set([...DEFAULT_CATEGORIES, ...existingCats])).sort();
+    
+    // Update or dynamically insert category datalist for wizards & inline edits
+    let datalist = document.getElementById('category-suggestions');
+    if (!datalist) {
+        datalist = document.createElement('datalist');
+        datalist.id = 'category-suggestions';
+        document.body.appendChild(datalist);
+    }
+    datalist.innerHTML = combinedCats.map(c => `<option value="${c}">`).join('');
+
+    if (!select) return;
+    const currentVal = select.value;
+    select.innerHTML = '<option value="all">All Categories</option>';
+    existingCats.sort().forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c;
+        opt.textContent = c;
+        if (c === currentVal) opt.selected = true;
+        select.appendChild(opt);
+    });
 }
 
 function renderTable() {
@@ -39,12 +79,17 @@ function renderTable() {
 
     const term = (document.getElementById('inv-search')?.value || '').toLowerCase().trim();
     const sortVal = document.getElementById('inv-sort')?.value || 'name-asc';
+    const catVal = document.getElementById('inv-category-filter')?.value || 'all';
 
     let filtered = allInventory.filter(i => {
+        const itemCat = i.category || 'General Hardware';
+        if (catVal !== 'all' && itemCat !== catVal) return false;
+
         const nameMatch = i.name && i.name.toLowerCase().includes(term);
+        const catMatch = itemCat.toLowerCase().includes(term);
         const typeMatch = i.type && i.type.toLowerCase().includes(term);
         const serviceMatch = i.is_service && 'service'.includes(term);
-        return !term || nameMatch || typeMatch || serviceMatch;
+        return !term || nameMatch || catMatch || typeMatch || serviceMatch;
     });
 
     filtered.sort((a, b) => {
@@ -84,7 +129,12 @@ function renderTable() {
         // Main Table Row
         html += `
         <tr class="hover:bg-slate-50 border-b border-slate-100 transition-colors">
-            <td class="py-3 px-4 font-bold text-slate-900">${i.name}</td>
+            <td class="py-3 px-4 font-bold text-slate-900">
+                <div class="leading-tight">${i.name}</div>
+                <div class="mt-1">
+                    <span class="inline-block px-2 py-0.5 text-[10px] font-bold rounded-md bg-slate-100 text-slate-600 border border-slate-200">${i.category || 'General Hardware'}</span>
+                </div>
+            </td>
             <td class="py-3 px-4">
                 <span class="px-2.5 py-1 text-xs font-bold rounded-lg ${i.is_service ? 'bg-slate-100 text-slate-600' : 'bg-orange-100 text-orange-700'}">
                     ${i.is_service ? 'Service' : (i.type === 'variable' ? 'Variable' : 'Fixed')}
@@ -103,12 +153,16 @@ function renderTable() {
         <!-- Inline Edit Row (Hidden by default) -->
         <tr id="edit-row-${i.id}" class="hidden bg-slate-100 border-b-2 border-slate-200 shadow-inner">
             <td colspan="7" class="p-4">
-                <div class="grid grid-cols-1 md:grid-cols-6 gap-4 items-end bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-                    <div class="md:col-span-2">
+                <div class="grid grid-cols-1 md:grid-cols-6 gap-3 items-end bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+                    <div class="md:col-span-3">
                         <label class="block text-xs font-bold mb-1 text-slate-600">Item Name</label>
                         <input type="text" id="edit-name-${i.id}" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-bold focus:ring-2 focus:ring-orange-500 outline-none transition-shadow" value="${i.name || ''}">
                     </div>
-                    <div>
+                    <div class="md:col-span-3">
+                        <label class="block text-xs font-bold mb-1 text-slate-600">Category</label>
+                        <input type="text" list="category-suggestions" id="edit-cat-${i.id}" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-semibold focus:ring-2 focus:ring-orange-500 outline-none transition-shadow" value="${i.category || 'General Hardware'}" placeholder="e.g. Cement, Fasteners">
+                    </div>
+                    <div class="md:col-span-2">
                         <label class="block text-xs font-bold mb-1 text-slate-600">Type</label>
                         <select id="edit-type-${i.id}" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-orange-500 bg-white font-semibold">
                             <option value="fixed" ${i.type === 'fixed' ? 'selected' : ''}>Fixed Price</option>
@@ -123,7 +177,7 @@ function renderTable() {
                         <label class="block text-xs font-bold mb-1 text-slate-600">Sell Price (Ksh)</label>
                         <input type="number" id="edit-sp-${i.id}" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-bold text-orange-600 focus:ring-2 focus:ring-orange-500 outline-none transition-shadow" value="${i.selling_price || 0}">
                     </div>
-                    <div>
+                    <div class="md:col-span-2">
                         <label class="block text-xs font-bold mb-1 text-slate-600">Stock Qty</label>
                         <input type="number" id="edit-stock-${i.id}" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-bold focus:ring-2 focus:ring-orange-500 outline-none transition-shadow" value="${i.stock_quantity || 0}">
                     </div>
@@ -162,6 +216,7 @@ window.toggleEdit = (id) => {
 
 window.saveEdit = async (id) => {
     const nameEl = document.getElementById(`edit-name-${id}`);
+    const catEl = document.getElementById(`edit-cat-${id}`);
     const typeEl = document.getElementById(`edit-type-${id}`);
     const svcEl = document.getElementById(`edit-svc-${id}`);
     const bpEl = document.getElementById(`edit-bp-${id}`);
@@ -170,6 +225,7 @@ window.saveEdit = async (id) => {
 
     const payload = {
         name: nameEl?.value.trim(),
+        category: catEl?.value.trim() || 'General Hardware',
         type: typeEl?.value || 'fixed',
         is_service: svcEl?.checked === true,
         buying_price: parseFloat(bpEl?.value || 0),
@@ -217,10 +273,14 @@ document.getElementById('btn-add-item')?.addEventListener('click', () => {
             <!-- Section 1: Core Info -->
             <div class="p-4 bg-slate-50 border border-slate-200 rounded-2xl">
                 <h3 class="text-xs font-black text-slate-800 mb-3 uppercase tracking-wider">1. Core Product Info</h3>
-                <div class="grid grid-cols-2 gap-4">
-                    <div class="col-span-2">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
                         <label class="block text-xs font-bold mb-1 text-slate-700">Base Name (e.g. Simba Cement, Wire Nails 3 Inch)</label>
                         <input type="text" id="wiz-name" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm font-bold focus:ring-2 focus:ring-orange-500 outline-none" placeholder="e.g. Simba Cement">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold mb-1 text-slate-700">Category</label>
+                        <input type="text" list="category-suggestions" id="wiz-category" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm font-semibold focus:ring-2 focus:ring-orange-500 outline-none bg-white" placeholder="Select or type category..." value="General Hardware">
                     </div>
                     <div>
                         <label class="block text-xs font-bold mb-1 text-slate-700">Type</label>
@@ -229,9 +289,9 @@ document.getElementById('btn-add-item')?.addEventListener('click', () => {
                             <option value="variable">Variable Price</option>
                         </select>
                     </div>
-                    <div class="flex items-center pt-5">
+                    <div class="flex items-center md:col-span-3">
                         <input type="checkbox" id="wiz-is-service" class="mr-2 h-4 w-4 text-orange-600 rounded border-gray-300 focus:ring-orange-500">
-                        <label for="wiz-is-service" class="text-xs font-bold text-slate-700">Is Service (No Stock)</label>
+                        <label for="wiz-is-service" class="text-xs font-bold text-slate-700">Is Service (No Stock Deductions)</label>
                     </div>
                 </div>
             </div>
@@ -365,6 +425,7 @@ document.getElementById('btn-add-item')?.addEventListener('click', () => {
             return;
         }
 
+        const category = document.getElementById('wiz-category')?.value.trim() || 'General Hardware';
         const type = document.getElementById('wiz-type')?.value || 'fixed';
         const isService = document.getElementById('wiz-is-service')?.checked === true;
 
@@ -437,14 +498,14 @@ document.getElementById('btn-add-item')?.addEventListener('click', () => {
             
             const payload = {
                 name: t.name,
+                category: category,
                 type: t.type,
                 is_service: t.is_service,
                 tier_level: t.tier_level,
                 buying_price: t.buying_price,
                 selling_price: t.selling_price,
                 stock_quantity: t.stock_quantity,
-                parent_id: lastParentId,
-                category: 'General Hardware'
+                parent_id: lastParentId
             };
 
             // Calculate units_per_parent based on parent tier's package yield
@@ -512,10 +573,14 @@ window.openEditWizard = async (id) => {
             <!-- Section 1: Core Info -->
             <div class="p-4 bg-slate-50 border border-slate-200 rounded-2xl">
                 <h3 class="text-xs font-black text-slate-800 mb-3 uppercase tracking-wider">1. Core Product Info</h3>
-                <div class="grid grid-cols-2 gap-4">
-                    <div class="col-span-2">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
                         <label class="block text-xs font-bold mb-1 text-slate-700">Base Name</label>
                         <input type="text" id="wiz-name" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm font-bold focus:ring-2 focus:ring-orange-500 outline-none" value="${t1.name || ''}">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold mb-1 text-slate-700">Category</label>
+                        <input type="text" list="category-suggestions" id="wiz-category" class="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm font-semibold focus:ring-2 focus:ring-orange-500 outline-none bg-white" value="${t1.category || 'General Hardware'}">
                     </div>
                     <div>
                         <label class="block text-xs font-bold mb-1 text-slate-700">Type</label>
@@ -524,9 +589,9 @@ window.openEditWizard = async (id) => {
                             <option value="variable" ${t1.type === 'variable' ? 'selected' : ''}>Variable Price</option>
                         </select>
                     </div>
-                    <div class="flex items-center pt-5">
+                    <div class="flex items-center md:col-span-3">
                         <input type="checkbox" id="wiz-is-service" class="mr-2 h-4 w-4 text-orange-600 rounded border-gray-300 focus:ring-orange-500" ${t1.is_service ? 'checked' : ''}>
-                        <label for="wiz-is-service" class="text-xs font-bold text-slate-700">Is Service</label>
+                        <label for="wiz-is-service" class="text-xs font-bold text-slate-700">Is Service (No Stock Deductions)</label>
                     </div>
                 </div>
             </div>
@@ -600,6 +665,7 @@ window.openEditWizard = async (id) => {
             </div>
         </div>
     `, async (close) => {
+        const category = document.getElementById('wiz-category')?.value.trim() || (t1.category || 'General Hardware');
         const type = document.getElementById('wiz-type')?.value || 'fixed';
         const isService = document.getElementById('wiz-is-service')?.checked === true;
 
@@ -666,14 +732,14 @@ window.openEditWizard = async (id) => {
                 
                 const p = {
                     name: t.name,
+                    category: category,
                     type: t.type,
                     is_service: t.is_service,
                     tier_level: t.tier_level,
                     buying_price: t.buying_price,
                     selling_price: t.selling_price,
                     stock_quantity: t.stock_quantity,
-                    parent_id: lastParentId,
-                    category: 'General Hardware'
+                    parent_id: lastParentId
                 };
                 
                 if (i > 0) {
@@ -710,6 +776,7 @@ window.openEditWizard = async (id) => {
 // ====================================================================
 document.getElementById('inv-search')?.addEventListener('input', renderTable);
 document.getElementById('inv-sort')?.addEventListener('change', renderTable);
+document.getElementById('inv-category-filter')?.addEventListener('change', renderTable);
 
 // ====================================================================
 // EXCEL EXPORT (SheetJS)
@@ -732,7 +799,8 @@ document.getElementById('btn-export-excel')?.addEventListener('click', async () 
 
         const excelData = data.map(item => ({
             'Item Name': item.name || 'Unnamed Item',
-            'Type / Category': item.is_service ? 'Service' : (item.type === 'fixed' ? 'Fixed Price' : 'Variable Price'),
+            'Category': item.category || 'General Hardware',
+            'Type': item.is_service ? 'Service' : (item.type === 'fixed' ? 'Fixed Price' : 'Variable Price'),
             'Buying Price (Ksh)': item.buying_price || 0,
             'Selling Price (Ksh)': item.selling_price || 0,
             'Stock Quantity': item.is_service ? 'N/A' : (item.stock_quantity || 0),
@@ -752,6 +820,7 @@ document.getElementById('btn-export-excel')?.addEventListener('click', async () 
         const max_name_width = excelData.reduce((w, r) => Math.max(w, (r['Item Name'] || '').length), 20);
         worksheet['!cols'] = [
             { wch: max_name_width + 2 },
+            { wch: 22 },
             { wch: 18 },
             { wch: 20 },
             { wch: 20 },
