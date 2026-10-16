@@ -199,11 +199,22 @@ function renderCategoryChips() {
     const container = document.getElementById('category-chips');
     if (!container) return;
 
-    const rawCats = inventory
-        .map(i => (i.category || '').trim())
-        .filter(Boolean);
+    let savedCats = [];
+    try {
+        if (storeSettings.hardware_categories) {
+            savedCats = JSON.parse(storeSettings.hardware_categories);
+        } else {
+            const cached = localStorage.getItem('lh_hardware_categories');
+            if (cached) savedCats = JSON.parse(cached);
+        }
+    } catch {}
 
-    const uniqueCategories = ['ALL', ...Array.from(new Set(rawCats)).sort()];
+    const rawCats = [
+        ...(Array.isArray(savedCats) ? savedCats : []),
+        ...inventory.map(i => (i.category || '').trim())
+    ].filter(Boolean);
+
+    const uniqueCategories = ['ALL', ...Array.from(new Set(rawCats)).sort((a, b) => a.localeCompare(b))];
 
     container.innerHTML = uniqueCategories.map(cat => {
         const isMatch = activeCategory.toLowerCase() === cat.toLowerCase();

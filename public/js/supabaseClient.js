@@ -1,23 +1,87 @@
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.0/+esm';
 export const supabase = createClient('https://sbpncxjddwontoemkuye.supabase.co', 'sb_publishable_86dCOSVSXe-IXIENSPG5Ow_JJOj5snI');
 export let currentUser = null;
-export async function login(username, pin) {
+
+// Session TTL constants
+export const SESSION_TTL_STANDARD_MS = 24 * 60 * 60 * 1000; // 1 Day (24 hours) default
+export const SESSION_TTL_REMEMBER_MS = 7 * 24 * 60 * 60 * 1000; // 7 Days (1 week) with Remember Me
+
+export async function login(username, pin, rememberMe = false) {
     const { data, error } = await supabase.from('users').select('*').eq('username', username).eq('pin', pin).single();
     if (error || !data) return { success: false };
-    currentUser = data; localStorage.setItem('litaj_session', JSON.stringify(data));
-    return { success: true, user: data };
+    
+    const now = Date.now();
+    const duration = rememberMe ? SESSION_TTL_REMEMBER_MS : SESSION_TTL_STANDARD_MS;
+    const sessionPayload = {
+        ...data,
+        session_created_at: now,
+        expires_at: now + duration,
+        remember_me: !!rememberMe
+    };
+
+    currentUser = sessionPayload;
+    localStorage.setItem('litaj_session', JSON.stringify(sessionPayload));
+    return { success: true, user: sessionPayload };
 }
-export function logout() { currentUser = null; localStorage.removeItem('litaj_session'); window.location.href = '/login.html'; }
+
+export function logout(redirect = true) {
+    currentUser = null;
+    localStorage.removeItem('litaj_session');
+    if (redirect) {
+        window.location.href = '/login.html';
+    }
+}
+
 export function checkSession() {
-    const session = localStorage.getItem('litaj_session');
-    if (session) { currentUser = JSON.parse(session); return true; }
-    return false;
+    const sessionStr = localStorage.getItem('litaj_session');
+    if (!sessionStr) return false;
+    try {
+        const session = JSON.parse(sessionStr);
+        if (!session || !session.id) {
+            logout(false);
+            return false;
+        }
+
+        // Validate token/session expiration timestamp
+        if (session.expires_at) {
+            if (Date.now() > session.expires_at) {
+                console.warn('[Session] Token/Session has expired. Voiding local session.');
+                logout(false);
+                return false;
+            }
+        } else {
+            // Legacy session backfill: 24h standard TTL
+            session.session_created_at = Date.now();
+            session.expires_at = Date.now() + SESSION_TTL_STANDARD_MS;
+            session.remember_me = false;
+            localStorage.setItem('litaj_session', JSON.stringify(session));
+        }
+
+        currentUser = session;
+        return true;
+    } catch (e) {
+        logout(false);
+        return false;
+    }
 }
+
 export function requireAuth() {
     if (!checkSession()) {
-        window.location.href = '/login.html';
+        window.location.href = '/login.html?expired=1';
         return;
     }
+
+    // Active heartbeat watchdog: checks session expiration every 60 seconds
+    if (!window.__authWatchdogActive) {
+        window.__authWatchdogActive = true;
+        setInterval(() => {
+            if (!checkSession()) {
+                console.warn('[Session Watchdog] Session expired during usage. Redirecting to login.');
+                window.location.href = '/login.html?expired=1';
+            }
+        }, 60000);
+    }
+
     const unhide = () => {
         if (currentUser && currentUser.role === 'admin') {
             document.querySelectorAll('.admin-only').forEach(e => e.classList.remove('hidden'));

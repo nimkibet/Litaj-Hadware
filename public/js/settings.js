@@ -9,6 +9,20 @@ if (currentUser && currentUser.role !== 'admin') {
 // --------------------------------------------------------------------
 // State Management
 // --------------------------------------------------------------------
+export const DEFAULT_CATEGORIES = [
+    'Building Materials & Cement',
+    'Fasteners, Nails & Screws',
+    'Roofing & Timber',
+    'Plumbing & Pipes',
+    'Electrical & Lighting',
+    'Paints & Finishes',
+    'Hand & Power Tools',
+    'Steel, Rebars & Iron Sheets',
+    'General Hardware'
+];
+
+let hardwareCategories = [...DEFAULT_CATEGORIES];
+
 const defaultSettings = {
     company_name: 'Litaj Hardware',
     tagline: 'Building Materials & Construction Supplies',
@@ -19,7 +33,8 @@ const defaultSettings = {
     tax_rate: '0',
     max_discount_pct: '50',
     low_stock_threshold: '5',
-    receipt_footer: 'Thank you for building with Litaj Hardware! Goods once sold are not returnable without valid receipt.'
+    receipt_footer: 'Thank you for building with Litaj Hardware! Goods once sold are not returnable without valid receipt.',
+    hardware_categories: JSON.stringify(DEFAULT_CATEGORIES)
 };
 
 let currentSettings = { ...defaultSettings };
@@ -30,6 +45,7 @@ let currentSettings = { ...defaultSettings };
 document.addEventListener('DOMContentLoaded', () => {
     initNavigation();
     initSettingsForm();
+    initCategoryControls();
     initNotificationControls();
     loadSettingsFromDatabase();
 });
@@ -128,6 +144,30 @@ async function loadSettingsFromDatabase() {
                 }
             });
         }
+
+        // Parse and sync persistent hardware categories
+        if (currentSettings.hardware_categories) {
+            try {
+                const parsed = JSON.parse(currentSettings.hardware_categories);
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                    hardwareCategories = parsed;
+                }
+            } catch (e) {
+                console.warn('[Settings] Error parsing hardware_categories:', e);
+            }
+        } else {
+            // First time initialization: upsert DEFAULT_CATEGORIES to Supabase
+            hardwareCategories = [...DEFAULT_CATEGORIES];
+            currentSettings.hardware_categories = JSON.stringify(hardwareCategories);
+            await supabase.from('settings').upsert({
+                key: 'hardware_categories',
+                value: JSON.stringify(hardwareCategories),
+                updated_at: new Date().toISOString()
+            }, { onConflict: 'key' });
+        }
+
+        localStorage.setItem('lh_hardware_categories', JSON.stringify(hardwareCategories));
+        renderCategoriesUI();
 
         // Cache locally for offline resilience
         localStorage.setItem('lh_store_settings', JSON.stringify(currentSettings));
@@ -253,7 +293,8 @@ async function saveSettingsToDatabase() {
         { key: 'tax_rate', value: taxRate.toString(), updated_at: now },
         { key: 'max_discount_pct', value: maxDiscount.toString(), updated_at: now },
         { key: 'low_stock_threshold', value: threshold.toString(), updated_at: now },
-        { key: 'receipt_footer', value: receiptFooter, updated_at: now }
+        { key: 'receipt_footer', value: receiptFooter, updated_at: now },
+        { key: 'hardware_categories', value: JSON.stringify(hardwareCategories), updated_at: now }
     ];
 
     try {
@@ -422,3 +463,111 @@ function playAlertChime() {
         // AudioContext restricted before user interaction
     }
 }
+
+// --------------------------------------------------------------------
+// Hardware Categories Directory Management
+// --------------------------------------------------------------------
+function initCategoryControls() {
+    const input = document.getElementById('new-category-input');
+    const btn = document.getElementById('btn-add-category');
+
+    const handleAddCategory = async () => {
+        if (!input) return;
+        const raw = input.value.trim();
+        if (!raw) {
+            return showAlert('Please enter a category name.', 'error');
+        }
+        if (raw.length < 2) {
+            return showAlert('Category name must be at least 2 characters long.', 'error');
+        }
+        if (raw.length > 60) {
+            return showAlert('Category name cannot exceed 60 characters.', 'error');
+        }
+
+        const isDuplicate = hardwareCategories.some(c => c.toLowerCase() === raw.toLowerCase());
+        if (isDuplicate) {
+            return showAlert(`Category "${raw}" already exists in the directory.`, 'error');
+        }
+
+        const updated = [...hardwareCategories, raw].sort((a, b) => a.localeCompare(b));
+        const success = await saveCategoriesToDatabase(updated);
+        if (success) {
+            input.value = '';
+            showAlert(`Category "${raw}" saved permanently to database!`, 'success');
+        }
+    };
+
+    btn?.addEventListener('click', handleAddCategory);
+    input?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            handleAddCategory();
+        }
+    });
+}
+
+function renderCategoriesUI() {
+    const container = document.getElementById('settings-categories-list');
+    const badge = document.getElementById('category-count-badge');
+    if (badge) {
+        badge.textContent = `${hardwareCategories.length} Categories`;
+    }
+    if (!container) return;
+
+    if (!hardwareCategories || hardwareCategories.length === 0) {
+        container.innerHTML = `<span class="text-xs text-slate-400 italic">No categories saved yet. Enter a category name above to add one.</span>`;
+        return;
+    }
+
+    container.innerHTML = hardwareCategories.map(cat => {
+        const safeCat = cat.replace(/"/g, '&quot;');
+        return `
+            <div class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-slate-300 text-xs font-bold text-slate-800 shadow-sm hover:border-orange-300 transition">
+                <span>📁</span>
+                <span>${cat}</span>
+                <button type="button" class="btn-del-cat ml-1 text-slate-400 hover:text-red-600 focus:outline-none p-0.5 rounded transition font-bold" data-category="${safeCat}" title="Remove category from directory">
+                    ✕
+                </button>
+            </div>
+        `;
+    }).join('');
+
+    container.querySelectorAll('.btn-del-cat').forEach(delBtn => {
+        delBtn.addEventListener('click', async (e) => {
+            const catToDelete = e.currentTarget.dataset.category;
+            if (!confirm(`Are you sure you want to remove category "${catToDelete}" from the saved directory?`)) return;
+
+            const updated = hardwareCategories.filter(c => c !== catToDelete);
+            const success = await saveCategoriesToDatabase(updated);
+            if (success) {
+                showAlert(`Category "${catToDelete}" removed from directory.`, 'success');
+            }
+        });
+    });
+}
+
+async function saveCategoriesToDatabase(newCategories) {
+    try {
+        const now = new Date().toISOString();
+        const jsonVal = JSON.stringify(newCategories);
+        const { error } = await supabase.from('settings').upsert({
+            key: 'hardware_categories',
+            value: jsonVal,
+            updated_at: now
+        }, { onConflict: 'key' });
+
+        if (error) throw error;
+
+        hardwareCategories = newCategories;
+        currentSettings.hardware_categories = jsonVal;
+        localStorage.setItem('lh_hardware_categories', jsonVal);
+        localStorage.setItem('lh_store_settings', JSON.stringify(currentSettings));
+        renderCategoriesUI();
+        return true;
+    } catch (err) {
+        console.error('[Settings] Error saving categories:', err);
+        showAlert('Failed to save category to database: ' + err.message, 'error');
+        return false;
+    }
+}
+

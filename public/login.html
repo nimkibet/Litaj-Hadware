@@ -40,10 +40,14 @@
                 <div class="w-4 h-4 rounded-full border-2 border-slate-300 pin-dot"></div>
                 <div class="w-4 h-4 rounded-full border-2 border-slate-300 pin-dot"></div>
             </div>
+            <div id="session-expired-notice" class="w-full mb-4 px-3.5 py-2.5 bg-amber-50 border border-amber-200 rounded-2xl flex items-center gap-2.5 text-xs text-amber-900 font-semibold shadow-sm hidden">
+                <span class="text-base">⏰</span>
+                <span>Session expired. Please enter your PIN to sign back in.</span>
+            </div>
             <div id="login-error" class="w-full mb-4 px-3 py-2 bg-red-50 border border-red-200 rounded-xl flex items-center gap-2 text-xs text-red-600 hidden">
                 ⚠️ <span id="login-error-msg">Invalid credentials</span>
             </div>
-            <div class="grid grid-cols-3 gap-3 w-full mb-6">
+            <div class="grid grid-cols-3 gap-3 w-full mb-4">
                 <button class="keypad-btn h-14 rounded-2xl bg-slate-50 border border-slate-100 text-xl font-semibold text-slate-700 shadow-sm" data-val="1">1</button>
                 <button class="keypad-btn h-14 rounded-2xl bg-slate-50 border border-slate-100 text-xl font-semibold text-slate-700 shadow-sm" data-val="2">2</button>
                 <button class="keypad-btn h-14 rounded-2xl bg-slate-50 border border-slate-100 text-xl font-semibold text-slate-700 shadow-sm" data-val="3">3</button>
@@ -57,6 +61,16 @@
                 <button class="keypad-btn h-14 rounded-2xl bg-slate-50 border border-slate-100 text-xl font-semibold text-slate-700 shadow-sm" data-val="0">0</button>
                 <button class="keypad-btn h-14 rounded-2xl bg-slate-100 text-slate-600 font-bold" data-val="back">⌫</button>
             </div>
+
+            <!-- Remember Me Toggle (Extends Session from 1 Day to 1 Week) -->
+            <div class="w-full flex items-center justify-between mb-4 px-1">
+                <label for="remember-me" class="flex items-center gap-2 cursor-pointer select-none text-xs font-bold text-slate-700 hover:text-slate-900 transition">
+                    <input type="checkbox" id="remember-me" class="w-4 h-4 text-orange-600 rounded border-slate-300 focus:ring-orange-500 accent-orange-600 cursor-pointer">
+                    <span>Remember me</span>
+                </label>
+                <span class="text-[10px] font-bold text-slate-500 uppercase tracking-wider bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200" id="session-ttl-indicator">1 Day (Standard)</span>
+            </div>
+
             <button id="btn-login-submit" class="w-full h-14 rounded-2xl bg-orange-600 hover:bg-orange-700 text-white font-bold text-base transition flex items-center justify-center shadow-lg shadow-orange-500/20">Sign In</button>
         </div>
     </div>

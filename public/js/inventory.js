@@ -23,6 +23,7 @@ async function load() {
     `).join('');
 
     try {
+        await loadSavedCategories();
         const { data, error } = await supabase.from('inventory').select('*').order('name');
         if (error) throw error;
         allInventory = data || [];
@@ -35,8 +36,7 @@ async function load() {
 }
 
 const DEFAULT_CATEGORIES = [
-    'Building Materials',
-    'Cement & Masonry',
+    'Building Materials & Cement',
     'Fasteners, Nails & Screws',
     'Roofing & Timber',
     'Plumbing & Pipes',
@@ -47,10 +47,65 @@ const DEFAULT_CATEGORIES = [
     'General Hardware'
 ];
 
+let savedCategories = [...DEFAULT_CATEGORIES];
+
+async function loadSavedCategories() {
+    try {
+        const cached = localStorage.getItem('lh_hardware_categories');
+        if (cached) {
+            try {
+                const parsed = JSON.parse(cached);
+                if (Array.isArray(parsed) && parsed.length > 0) savedCategories = parsed;
+            } catch {}
+        }
+
+        const { data, error } = await supabase
+            .from('settings')
+            .select('*')
+            .eq('key', 'hardware_categories')
+            .maybeSingle();
+
+        if (!error && data && data.value) {
+            const parsed = JSON.parse(data.value);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+                savedCategories = parsed;
+                localStorage.setItem('lh_hardware_categories', JSON.stringify(savedCategories));
+            }
+        }
+    } catch (e) {
+        console.warn('[Inventory] Error loading saved categories:', e);
+    }
+}
+
+async function persistCategoryIfNew(catName) {
+    if (!catName) return;
+    const trimmed = catName.trim();
+    if (!trimmed) return;
+
+    const exists = savedCategories.some(c => c.toLowerCase() === trimmed.toLowerCase());
+    if (!exists) {
+        savedCategories.push(trimmed);
+        savedCategories.sort((a, b) => a.localeCompare(b));
+        localStorage.setItem('lh_hardware_categories', JSON.stringify(savedCategories));
+        populateCategoryFilter();
+
+        try {
+            await supabase.from('settings').upsert({
+                key: 'hardware_categories',
+                value: JSON.stringify(savedCategories),
+                updated_at: new Date().toISOString()
+            }, { onConflict: 'key' });
+            console.log(`[Inventory] Persisted new category to Supabase: "${trimmed}"`);
+        } catch (err) {
+            console.warn('[Inventory] Error persisting category to Supabase:', err);
+        }
+    }
+}
+
 function populateCategoryFilter() {
     const select = document.getElementById('inv-category-filter');
     const existingCats = Array.from(new Set(allInventory.map(i => i.category || 'General Hardware'))).filter(Boolean);
-    const combinedCats = Array.from(new Set([...DEFAULT_CATEGORIES, ...existingCats])).sort();
+    const combinedCats = Array.from(new Set([...savedCategories, ...DEFAULT_CATEGORIES, ...existingCats])).sort((a, b) => a.localeCompare(b));
     
     // Update or dynamically insert category datalist for wizards & inline edits
     let datalist = document.getElementById('category-suggestions');
@@ -64,7 +119,7 @@ function populateCategoryFilter() {
     if (!select) return;
     const currentVal = select.value;
     select.innerHTML = '<option value="all">All Categories</option>';
-    existingCats.sort().forEach(c => {
+    combinedCats.forEach(c => {
         const opt = document.createElement('option');
         opt.value = c;
         opt.textContent = c;
@@ -253,6 +308,7 @@ window.saveEdit = async (id) => {
     if (error) {
         alert("Error saving: " + error.message);
     } else {
+        await persistCategoryIfNew(payload.category);
         await load();
     }
 };
@@ -667,6 +723,7 @@ document.getElementById('btn-add-item')?.addEventListener('click', () => {
             lastParentId = data.id; // Pass Supabase UUID down to next child
         }
 
+        await persistCategoryIfNew(category);
         close();
         await load();
     }, 'Save Packaging Hierarchy', 'max-w-4xl');
@@ -939,6 +996,7 @@ window.openEditWizard = async (id) => {
                 }
             }
 
+            await persistCategoryIfNew(category);
             close();
             await load();
         } catch (e) {
@@ -959,6 +1017,47 @@ window.openEditWizard = async (id) => {
 document.getElementById('inv-search')?.addEventListener('input', renderTable);
 document.getElementById('inv-sort')?.addEventListener('change', renderTable);
 document.getElementById('inv-category-filter')?.addEventListener('change', renderTable);
+
+// Quick Add Category Modal
+document.getElementById('btn-quick-add-category')?.addEventListener('click', () => {
+    showModal('Add Hardware Category', `
+        <div class="space-y-4">
+            <div>
+                <label class="block text-xs font-bold text-slate-700 mb-1">New Category Name <span class="text-red-500">*</span></label>
+                <input type="text" id="quick-category-name" placeholder="e.g. Adhesives & Sealants, Safety Gear" class="w-full border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm font-bold focus:ring-2 focus:ring-orange-500 outline-none">
+                <span class="text-[11px] text-slate-500 block mt-1">This category will be permanently saved to the Supabase database and available across POS and Inventory.</span>
+            </div>
+            <div>
+                <span class="text-xs font-bold text-slate-600 block mb-1.5 uppercase tracking-wider text-[10px]">Currently Active Categories:</span>
+                <div class="max-h-36 overflow-y-auto p-2.5 bg-slate-50 border border-slate-200 rounded-xl flex flex-wrap gap-1.5">
+                    ${savedCategories.map(c => `<span class="px-2.5 py-1 text-xs rounded-lg bg-white border border-slate-200 font-bold text-slate-700">${c}</span>`).join('')}
+                </div>
+            </div>
+        </div>
+    `, async (close) => {
+        const input = document.getElementById('quick-category-name');
+        const name = input?.value.trim();
+        if (!name) {
+            alert('Please enter a category name.');
+            return;
+        }
+        if (name.length < 2) {
+            alert('Category name must be at least 2 characters.');
+            return;
+        }
+        if (savedCategories.some(c => c.toLowerCase() === name.toLowerCase())) {
+            alert(`Category "${name}" already exists.`);
+            return;
+        }
+        await persistCategoryIfNew(name);
+        close();
+        const select = document.getElementById('inv-category-filter');
+        if (select) {
+            select.value = name;
+            renderTable();
+        }
+    }, 'Save Category', 'max-w-md');
+});
 
 // ====================================================================
 // EXCEL EXPORT (SheetJS)

@@ -7,18 +7,21 @@
     <meta http-equiv="refresh" content="0; url=/login.html">
     <script>
         try {
-            const session = localStorage.getItem('litaj_session');
-            if (session) {
-                const user = JSON.parse(session);
-                if (user && user.id) {
+            const sessionStr = localStorage.getItem('litaj_session');
+            if (sessionStr) {
+                const session = JSON.parse(sessionStr);
+                const isExpired = session.expires_at && Date.now() > session.expires_at;
+                if (session && session.id && !isExpired) {
                     window.location.replace('/pos.html');
                 } else {
-                    window.location.replace('/login.html');
+                    localStorage.removeItem('litaj_session');
+                    window.location.replace(isExpired ? '/login.html?expired=1' : '/login.html');
                 }
             } else {
                 window.location.replace('/login.html');
             }
         } catch (e) {
+            localStorage.removeItem('litaj_session');
             window.location.replace('/login.html');
         }
     </script>

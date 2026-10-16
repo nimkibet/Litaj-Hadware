@@ -77,6 +77,8 @@ async function processLogin() {
     
     // Disable inputs while logging in
     document.getElementById('login-error').classList.add('hidden');
+    const rememberMe = document.getElementById('remember-me')?.checked === true;
+    localStorage.setItem('litaj_remember_pref', rememberMe ? 'true' : 'false');
     
     if (!navigator.onLine) {
         // Offline PIN verification using cached user data
@@ -85,8 +87,15 @@ async function processLogin() {
             const users = JSON.parse(cachedStr);
             const user = users.find(u => u.username === loginUser);
             if (user && user.pin === currentPin) {
-                // Manually set session
-                localStorage.setItem('litaj_session', JSON.stringify(user));
+                const now = Date.now();
+                const duration = rememberMe ? (7 * 24 * 60 * 60 * 1000) : (24 * 60 * 60 * 1000);
+                const sessionPayload = {
+                    ...user,
+                    session_created_at: now,
+                    expires_at: now + duration,
+                    remember_me: rememberMe
+                };
+                localStorage.setItem('litaj_session', JSON.stringify(sessionPayload));
                 window.location.href = '/pos.html';
                 return;
             }
@@ -97,13 +106,40 @@ async function processLogin() {
         return;
     }
 
-    const res = await login(loginUser, currentPin);
+    const res = await login(loginUser, currentPin, rememberMe);
     if (res.success) window.location.href = '/pos.html';
     else { 
         document.getElementById('login-error').classList.remove('hidden'); 
         currentPin = ''; 
         updatePin(); 
     }
+}
+
+// Session expired banner & Remember Me preference
+if (window.location.search.includes('expired=1')) {
+    const notice = document.getElementById('session-expired-notice');
+    if (notice) notice.classList.remove('hidden');
+}
+
+const rememberCheckbox = document.getElementById('remember-me');
+const ttlIndicator = document.getElementById('session-ttl-indicator');
+if (rememberCheckbox && ttlIndicator) {
+    const savedPref = localStorage.getItem('litaj_remember_pref') === 'true';
+    rememberCheckbox.checked = savedPref;
+    const updateIndicator = () => {
+        if (rememberCheckbox.checked) {
+            ttlIndicator.textContent = '7 Days (Extended)';
+            ttlIndicator.className = 'text-[10px] font-bold text-emerald-700 uppercase tracking-wider bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200';
+        } else {
+            ttlIndicator.textContent = '1 Day (Standard)';
+            ttlIndicator.className = 'text-[10px] font-bold text-slate-500 uppercase tracking-wider bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200';
+        }
+    };
+    rememberCheckbox.addEventListener('change', () => {
+        localStorage.setItem('litaj_remember_pref', rememberCheckbox.checked ? 'true' : 'false');
+        updateIndicator();
+    });
+    updateIndicator();
 }
 
 // Init

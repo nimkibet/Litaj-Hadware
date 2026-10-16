@@ -110,6 +110,78 @@ runner.test('Should dynamically extract distinct inventory categories from live 
     await supabase.from('inventory').delete().in('id', ids);
 });
 
+runner.test('Should store, update, and retrieve persistent hardware categories in settings table', async () => {
+    const testCategoryA = `Abrasives & Polishes ${Date.now().toString().slice(-4)}`;
+    const testCategoryB = `Safety Helmets & Vests ${Date.now().toString().slice(-4)}`;
+    const initialCategories = ['General Hardware', 'Paints & Finishes', testCategoryA];
+
+    // 1. Upsert hardware_categories row into settings table
+    const { error: upsertErr } = await supabase.from('settings').upsert({
+        key: 'hardware_categories',
+        value: JSON.stringify(initialCategories),
+        updated_at: new Date().toISOString()
+    }, { onConflict: 'key' });
+
+    assert(!upsertErr, `Failed to upsert hardware_categories: ${upsertErr?.message}`);
+
+    // 2. Observable downstream assertion: query settings table directly
+    const { data: row, error: fetchErr } = await supabase
+        .from('settings')
+        .select('*')
+        .eq('key', 'hardware_categories')
+        .single();
+
+    assert(!fetchErr, `Failed to query hardware_categories: ${fetchErr?.message}`);
+    assert(row && row.value, 'hardware_categories row must contain a value string');
+
+    const parsed = JSON.parse(row.value);
+    assert(Array.isArray(parsed), 'hardware_categories must parse as an Array');
+    assert(parsed.includes(testCategoryA), `hardware_categories must contain ${testCategoryA}`);
+
+    // 3. Add new category, ensuring case-insensitive deduplication
+    const isDuplicate = parsed.some(c => c.toLowerCase() === testCategoryA.toLowerCase());
+    assert(isDuplicate, 'Duplicate check must detect existing category case-insensitively');
+
+    // Add unique category
+    const updatedCategories = [...parsed, testCategoryB].sort((a, b) => a.localeCompare(b));
+    const { error: updateErr } = await supabase.from('settings').upsert({
+        key: 'hardware_categories',
+        value: JSON.stringify(updatedCategories),
+        updated_at: new Date().toISOString()
+    }, { onConflict: 'key' });
+
+    assert(!updateErr, `Failed to update hardware_categories: ${updateErr?.message}`);
+
+    // 4. Downstream verification of second category
+    const { data: updatedRow } = await supabase
+        .from('settings')
+        .select('*')
+        .eq('key', 'hardware_categories')
+        .single();
+
+    const secondParsed = JSON.parse(updatedRow.value);
+    assert(secondParsed.includes(testCategoryB), `Updated categories must contain ${testCategoryB}`);
+    assert(secondParsed.length === initialCategories.length + 1, 'Length must increment by exactly 1');
+
+    // Restore standard default hardware categories so DB remains in pristine production state
+    const DEFAULT_CATEGORIES = [
+        'Building Materials & Cement',
+        'Fasteners, Nails & Screws',
+        'Roofing & Timber',
+        'Plumbing & Pipes',
+        'Electrical & Lighting',
+        'Paints & Finishes',
+        'Hand & Power Tools',
+        'Steel, Rebars & Iron Sheets',
+        'General Hardware'
+    ];
+    await supabase.from('settings').upsert({
+        key: 'hardware_categories',
+        value: JSON.stringify(DEFAULT_CATEGORIES),
+        updated_at: new Date().toISOString()
+    }, { onConflict: 'key' });
+});
+
 runner.test('Should clean up test settings record', async () => {
     const { error: delErr } = await supabase
         .from('settings')

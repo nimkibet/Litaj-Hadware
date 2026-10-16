@@ -3,6 +3,7 @@ const { supabase, TestRunner, assert, assertEqual, assertCloseTo } = require('./
 const runner = new TestRunner('07 - Today\'s Sales Ledger & Register KPI Aggregations');
 
 let sampleItemId = null;
+let createdItemId = null;
 let cashierA_Id = null;
 let cashierB_Id = null;
 const insertedReceipts = [];
@@ -14,8 +15,21 @@ runner.test('Should prepare cashiers and hardware item for ledger testing', asyn
     cashierB_Id = users[1] ? users[1].id : users[0].id;
 
     const { data: items } = await supabase.from('inventory').select('id').limit(1);
-    assert(items && items.length > 0, 'Hardware item must exist in DB');
-    sampleItemId = items[0].id;
+    if (items && items.length > 0) {
+        sampleItemId = items[0].id;
+    } else {
+        const { data: created, error } = await supabase.from('inventory').insert([{
+            name: `TEST-LEDGER-ITEM-${Date.now()}`,
+            selling_price: 500.00,
+            buying_price: 350.00,
+            stock_quantity: 100,
+            type: 'fixed'
+        }]).select().single();
+        assert(!error && created, 'Must create fallback hardware item if none exists');
+        sampleItemId = created.id;
+        createdItemId = created.id;
+    }
+    assert(sampleItemId, 'Hardware item must exist in DB');
 });
 
 runner.test('Should insert controlled today sales with various payment methods', async () => {
@@ -122,9 +136,12 @@ runner.test('Should verify cashier-specific ledger filtering', async () => {
     assertCloseTo(cashierATotal, 8500.00, 0.01, 'Cashier A non-voided sales must total 8,500.00 (5000 cash + 3500 mpesa)');
 });
 
-runner.test('Should clean up test ledger records', async () => {
+runner.test('Should clean up test ledger records and inventory item', async () => {
     if (insertedReceipts.length > 0) {
         await supabase.from('sales_log').delete().in('receipt_no', insertedReceipts);
+    }
+    if (createdItemId) {
+        await supabase.from('inventory').delete().eq('id', createdItemId);
     }
     const { data: check } = await supabase.from('sales_log').select('*').in('receipt_no', insertedReceipts);
     assertEqual(check.length, 0, 'Test ledger receipts must be cleaned up from DB');
