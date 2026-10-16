@@ -387,7 +387,7 @@ quickBarcodeInput?.addEventListener('keydown', (e) => {
 
 function handleBarcodeQuickAdd() {
     const query = (quickBarcodeInput?.value || '').trim().toLowerCase();
-    const qty = parseInt(quickBarcodeQtyInput?.value) || 1;
+    const qty = parseFloat(quickBarcodeQtyInput?.value) || 1;
 
     if (!query) return;
 
@@ -451,11 +451,108 @@ function resetInactivityTimer() {
 resetInactivityTimer();
 
 // ====================================================================
+// AUTOMATED BREAK-BULK & RESOURCE OPENING (VEGAS POS TIER UNBOXING)
+// Uses parent_id UUIDs exclusively to trace parent packages
+// ====================================================================
+async function autoBreakBulk(childItem, neededQty = 1) {
+    if (!childItem || !childItem.parent_id || childItem.is_service) return false;
+
+    // Find parent item using parent_id UUID
+    let parent = inventory.find(i => i.id === childItem.parent_id);
+    if (!parent && navigator.onLine) {
+        try {
+            const { data } = await supabase.from('inventory').select('*').eq('id', childItem.parent_id).single();
+            if (data) {
+                parent = data;
+                inventory.push(data);
+            }
+        } catch (e) {
+            console.warn('Failed to fetch parent item by UUID:', e);
+        }
+    }
+    if (!parent) return false;
+
+    // If parent also has 0 stock, check grandparent recursively
+    if ((parent.stock_quantity || 0) <= 0 && parent.parent_id) {
+        const grandParentSuccess = await autoBreakBulk(parent, 1);
+        if (grandParentSuccess) {
+            const refreshedParent = inventory.find(i => i.id === parent.id);
+            if (refreshedParent) parent = refreshedParent;
+        }
+    }
+
+    if ((parent.stock_quantity || 0) <= 0) {
+        return false;
+    }
+
+    const yieldUnits = parseFloat(childItem.units_per_parent) || 1;
+    const currentChildStock = parseFloat(childItem.stock_quantity || 0);
+    const deficit = Math.max(1, neededQty - currentChildStock);
+    const packsNeeded = Math.ceil(deficit / yieldUnits);
+    const packsToOpen = Math.min(parent.stock_quantity, Math.max(1, packsNeeded));
+    const addedUnits = packsToOpen * yieldUnits;
+
+    const newParentStock = parent.stock_quantity - packsToOpen;
+    const newChildStock = currentChildStock + addedUnits;
+
+    try {
+        if (navigator.onLine) {
+            // 1. Update Parent Stock in Supabase
+            await supabase.from('inventory').update({ stock_quantity: newParentStock }).eq('id', parent.id);
+
+            // 2. Update Child Stock in Supabase
+            await supabase.from('inventory').update({ stock_quantity: newChildStock }).eq('id', childItem.id);
+
+            // 3. Log into resources table (Auto opening of resources)
+            const parentCost = (parseFloat(parent.buying_price || 0) || 0) * packsToOpen;
+            await supabase.from('resources').insert([{
+                name: `${parent.name} (Auto-Opened for ${childItem.name})`,
+                units: packsToOpen,
+                cost: parentCost,
+                opened_by: currentUser ? currentUser.id : null,
+                status: 'active'
+            }]);
+        }
+
+        // 4. Update in-memory inventory cache & localStorage
+        parent.stock_quantity = newParentStock;
+        childItem.stock_quantity = newChildStock;
+        
+        const pIdx = inventory.findIndex(i => i.id === parent.id);
+        if (pIdx > -1) inventory[pIdx].stock_quantity = newParentStock;
+        const cIdx = inventory.findIndex(i => i.id === childItem.id);
+        if (cIdx > -1) inventory[cIdx].stock_quantity = newChildStock;
+
+        localStorage.setItem('litaj_inventory_cache', JSON.stringify(inventory));
+
+        showToast(`📦 Auto-opened ${packsToOpen}x "${parent.name}" (+${addedUnits} ${childItem.name})`);
+        renderCatalog();
+        return true;
+    } catch (err) {
+        console.error('Error in autoBreakBulk:', err);
+        return false;
+    }
+}
+
+// ====================================================================
 // 2. CART MANAGEMENT (VEGAS POS LOGIC + MOBILE TOUCH CONTROLS)
 // ====================================================================
 function addToCart(product, qtyToAdd = 1) {
     const validQty = Math.max(0, parseFloat(qtyToAdd) || 0);
     if (validQty <= 0) return;
+
+    // Check if stock is insufficient and parent exists to auto-break-bulk / open resource
+    if (!product.is_service && product.parent_id && (product.stock_quantity || 0) < validQty) {
+        autoBreakBulk(product, validQty).then(opened => {
+            if (opened) {
+                const refreshed = inventory.find(i => i.id === product.id);
+                if (refreshed) product.stock_quantity = refreshed.stock_quantity;
+                const itemInCart = cart.find(c => c.id === product.id);
+                if (itemInCart) itemInCart.stock_quantity = product.stock_quantity;
+                renderCart();
+            }
+        }).catch(e => console.warn('Auto break-bulk failed:', e));
+    }
 
     const existingIndex = cart.findIndex(c => c.id === product.id);
 
@@ -568,7 +665,8 @@ function renderCart() {
     const formattedSubtotal = `KSh ${subtotal.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
     const formattedGrandTotal = `KSh ${grandTotal.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
 
-    if (badge) badge.textContent = `${totalItems} item${totalItems === 1 ? '' : 's'}`;
+    const displayTotalItems = Number.isInteger(totalItems) ? totalItems : parseFloat(totalItems.toFixed(2));
+    if (badge) badge.textContent = `${displayTotalItems} item${displayTotalItems === 1 ? '' : 's'}`;
     if (subtotalEl) subtotalEl.textContent = formattedSubtotal;
     if (discountValEl) discountValEl.textContent = `- KSh ${discount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
     if (grandTotalEl) grandTotalEl.textContent = formattedGrandTotal;
@@ -578,10 +676,10 @@ function renderCart() {
         if (floatingBar && isMobile() && currentActiveView === 'products') {
             floatingBar.classList.remove('hidden');
         }
-        if (floatingItems) floatingItems.textContent = `${totalItems} item${totalItems === 1 ? '' : 's'} in cart`;
+        if (floatingItems) floatingItems.textContent = `${displayTotalItems} item${displayTotalItems === 1 ? '' : 's'} in cart`;
         if (floatingTotal) floatingTotal.textContent = formattedGrandTotal;
         if (mobileCartBadge) {
-            mobileCartBadge.textContent = totalItems;
+            mobileCartBadge.textContent = displayTotalItems;
             mobileCartBadge.classList.remove('hidden');
         }
     } else {
@@ -618,7 +716,7 @@ function renderCart() {
                 <!-- Large Touch Quantity Hitboxes (min 38x38px) -->
                 <div class="flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl">
                     <button class="cart-qty-minus w-9 h-9 sm:w-10 sm:h-10 rounded-lg bg-white active:bg-slate-200 text-slate-900 font-black text-lg shadow-sm flex items-center justify-center transition" data-id="${item.id}">−</button>
-                    <input type="number" min="1" value="${item.qty}" class="cart-qty-input w-14 h-9 sm:h-10 text-center bg-transparent font-black text-base text-slate-900 focus:outline-none" data-id="${item.id}">
+                    <input type="number" min="0.01" step="any" value="${Number.isInteger(item.qty) ? item.qty : parseFloat(item.qty.toFixed(2))}" class="cart-qty-input w-16 h-9 sm:h-10 text-center bg-transparent font-black text-base text-slate-900 focus:outline-none" data-id="${item.id}">
                     <button class="cart-qty-plus w-9 h-9 sm:w-10 sm:h-10 rounded-lg bg-white active:bg-slate-200 text-slate-900 font-black text-lg shadow-sm flex items-center justify-center transition" data-id="${item.id}">+</button>
                 </div>
                 <!-- Line Total -->
@@ -635,7 +733,14 @@ function renderCart() {
         btn.addEventListener('click', () => {
             const id = btn.dataset.id;
             const itm = cart.find(c => c.id === id);
-            if (itm) updateCartQty(id, itm.qty - 1);
+            if (!itm) return;
+            if (itm.qty > 1) {
+                updateCartQty(id, itm.qty - 1);
+            } else if (itm.qty > 0.25) {
+                updateCartQty(id, Math.round((itm.qty - 0.25) * 100) / 100);
+            } else {
+                removeCartItem(id);
+            }
         });
     });
 
@@ -643,15 +748,15 @@ function renderCart() {
         btn.addEventListener('click', () => {
             const id = btn.dataset.id;
             const itm = cart.find(c => c.id === id);
-            if (itm) updateCartQty(id, itm.qty + 1);
+            if (itm) updateCartQty(id, Math.round((itm.qty + 1) * 100) / 100);
         });
     });
 
     container.querySelectorAll('.cart-qty-input').forEach(input => {
         input.addEventListener('change', () => {
             const id = input.dataset.id;
-            const val = parseInt(input.value) || 1;
-            updateCartQty(id, Math.max(1, val));
+            const val = parseFloat(input.value) || 1;
+            updateCartQty(id, Math.max(0.01, val));
         });
     });
 
@@ -1076,6 +1181,17 @@ async function processFinalSale() {
     const receiptNo = `LH-${new Date().toISOString().slice(2, 10).replace(/-/g, '')}-${Math.floor(1000 + Math.random() * 9000)}`;
 
     try {
+        // Ensure bulk resources are auto-opened if needed for items in cart
+        for (const item of cart) {
+            if (!item.is_service && item.parent_id) {
+                const live = inventory.find(i => i.id === item.id);
+                const currentStock = live ? (live.stock_quantity || 0) : (item.stock_quantity || 0);
+                if (currentStock < item.qty) {
+                    await autoBreakBulk(live || item, item.qty);
+                }
+            }
+        }
+
         const now = new Date().toISOString();
         const salesRows = cart.map(item => ({
             item_id: item.id,
@@ -1259,7 +1375,7 @@ function buildReceiptPDFDoc(receiptNo, items, grandTotal, method, tendered, chan
     // Table of items
     const tableData = items.map(i => [
         i.name,
-        i.qty.toString(),
+        (Number.isInteger(i.qty) ? i.qty : parseFloat(i.qty.toFixed(2))).toString(),
         parseFloat(i.selling_price || 0).toFixed(0),
         parseFloat(i.total || (i.selling_price * i.qty)).toFixed(0)
     ]);

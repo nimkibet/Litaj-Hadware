@@ -4,6 +4,7 @@ const runner = new TestRunner('05 - Vegas POS Multi-Payment Checkout Flow & Rece
 
 let testReceiptNo = null;
 let sampleItemId = null;
+let createdNewItem = false;
 
 runner.test('Should fetch or create a hardware item for checkout testing', async () => {
     const { data: existing } = await supabase.from('inventory').select('id, name, selling_price, buying_price').limit(1);
@@ -18,6 +19,7 @@ runner.test('Should fetch or create a hardware item for checkout testing', async
             type: 'fixed'
         }]).select().single();
         sampleItemId = created.id;
+        createdNewItem = true;
     }
     assert(sampleItemId, 'Sample hardware item must exist');
 });
@@ -210,9 +212,13 @@ runner.test('Should assert receipt generation checkbox defaults to UNCHECKED (no
     assertEqual(receiptGenerated, true, 'Receipt should ONLY be generated when cashier explicitly checks box');
 });
 
-runner.test('Should clean up test checkout records from sales_log', async () => {
+runner.test('Should clean up test checkout records from sales_log and inventory', async () => {
     if (testReceiptNo) {
         await supabase.from('sales_log').delete().eq('receipt_no', testReceiptNo);
+    }
+    await supabase.from('inventory').delete().eq('name', 'TEST-CHECKOUT-ITEM');
+    if (sampleItemId) {
+        await supabase.from('inventory').delete().eq('id', sampleItemId);
     }
     const { data: check } = await supabase.from('sales_log').select('*').eq('receipt_no', testReceiptNo);
     assertEqual(check.length, 0, 'Test checkout records must be removed from DB');

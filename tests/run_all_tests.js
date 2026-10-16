@@ -21,7 +21,8 @@ const suites = [
     { file: '08_offline_queue_sync.test.js', name: '08 - Offline Sales Queue & Cloud Synchronization' },
     { file: '09_store_settings_dynamic.test.js', name: '09 - Dynamic Store Configuration & Category Discovery' },
     { file: '10_restock_and_suppliers.test.js', name: '10 - Restock & Supplier Orders Workflow (Zero Trust)' },
-    { file: '11_analytics_and_audit_report.test.js', name: '11 - Analytics Engine & Executive Audit PDF Data' }
+    { file: '11_analytics_and_audit_report.test.js', name: '11 - Analytics Engine & Executive Audit PDF Data' },
+    { file: '12_packaging_tiers_and_resource_unboxing.test.js', name: '12 - Vegas Packaging Tiers, Resource Unboxing & Fractional UoM' }
 ];
 
 console.log('======================================================================');
